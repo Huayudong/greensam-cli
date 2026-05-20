@@ -1,0 +1,98 @@
+package com.greensamcli;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.greensamcli.agent.AgentLoop;
+import com.greensamcli.agent.ToolRegistry;
+import com.greensamcli.cli.CliRenderer;
+import com.greensamcli.cli.Repl;
+import com.greensamcli.cli.TerminalRenderer;
+import com.greensamcli.client.ChatClient;
+import com.greensamcli.client.OpenAiChatClient;
+import com.greensamcli.client.OpenAiStreamingChatClient;
+import com.greensamcli.config.AppConfig;
+import com.greensamcli.tools.ListFilesTool;
+import com.greensamcli.tools.ReadFileTool;
+import okhttp3.OkHttpClient;
+
+/**
+ * greensam-cli 的主入口类——组装所有组件并启动 REPL。
+ *
+ * <p>这个类是整个应用的"接线板"，职责是创建各个组件实例并把它们连接起来：</p>
+ *
+ * <pre>
+ * AppConfig           ← 加载环境变量配置
+ *     │
+ * OkHttpClient        ← HTTP 客户端
+ * ObjectMapper        ← JSON 序列化/反序列化
+ *     │
+ * ├── OpenAiChatClient          ← 同步 API 客户端
+ * ├── OpenAiStreamingChatClient ← 流式 API 客户端
+ *     │
+ * ToolRegistry        ← 注册可用工具（ReadFileTool, ListFilesTool）
+ *     │
+ * AgentLoop           ← 核心推理引擎（注入 client + registry）
+ *     │
+ * TerminalRenderer    ← 终端输出渲染
+ *     │
+ * Repl                ← 终端交互循环（注入 agentLoop + renderer）
+ *     │
+ * repl.run()          ← 启动主循环
+ * </pre>
+ *
+ * <p>这种"手动组装"的方式虽然不如 Spring IoC 自动化，
+ * 但依赖关系一目了然，非常适合学习项目理解各组件如何协作。</p>
+ */
+public class GreensamCli {
+
+    public static void main(String[] args) {
+        try {
+            // ① 加载配置（环境变量）
+            AppConfig config = new AppConfig();
+
+            // ② 创建基础设施
+            OkHttpClient httpClient = new OkHttpClient();
+            ObjectMapper objectMapper = new ObjectMapper();
+
+            // ③ 创建 API 客户端（同步 + 流式）
+            ChatClient chatClient = new OpenAiChatClient(
+                    httpClient, objectMapper,
+                    config.getApiKey(), config.getBaseUrl(), config.getModel()
+            );
+
+            OpenAiStreamingChatClient streamingClient = new OpenAiStreamingChatClient(
+                    httpClient, objectMapper,
+                    config.getApiKey(), config.getBaseUrl(), config.getModel()
+            );
+
+            // ④ 注册工具
+            ToolRegistry toolRegistry = new ToolRegistry();
+            toolRegistry.register(new ReadFileTool());
+            toolRegistry.register(new ListFilesTool());
+            // 未来添加新工具只需在这里 register 即可
+
+            // ⑤ 创建 AgentLoop（注入 API 客户端和工具注册表）
+            boolean useStreaming = !"false".equals(System.getenv("GREENSAM_STREAMING"));
+
+            AgentLoop agentLoop = new AgentLoop(
+                    chatClient, streamingClient,
+                    toolRegistry, objectMapper, config.getSystemPrompt()
+            );
+
+            // ⑥ 创建终端渲染器和 REPL
+            CliRenderer renderer = new TerminalRenderer();
+            Repl repl = new Repl(agentLoop, renderer, useStreaming);
+
+            // ⑦ 启动 REPL 主循环
+            repl.run();
+
+        } catch (IllegalStateException e) {
+            // 配置错误（缺少 API Key 等）
+            System.err.println("Configuration error: " + e.getMessage());
+            System.err.println("Please set the OPENAI_API_KEY environment variable.");
+            System.exit(1);
+        } catch (Exception e) {
+            System.err.println("Fatal error: " + e.getMessage());
+            System.exit(1);
+        }
+    }
+}
