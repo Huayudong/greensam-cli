@@ -5,6 +5,7 @@ import com.greensamcli.agent.ToolCallListener;
 import com.greensamcli.client.StreamCallback;
 import com.greensamcli.model.ChatMessage;
 import com.greensamcli.model.ToolCall;
+import lombok.extern.slf4j.Slf4j;
 import org.jline.reader.EndOfFileException;
 import org.jline.reader.LineReader;
 import org.jline.reader.LineReaderBuilder;
@@ -48,6 +49,7 @@ import java.io.IOException;
  *   <li>流式模式（runStreaming）：AI 文字逐字显示（打字机效果）</li>
  * </ul>
  */
+@Slf4j
 public class Repl {
 
     private static final String PROMPT = "> ";
@@ -66,16 +68,35 @@ public class Repl {
         this.useStreaming = useStreaming;
     }
 
+    private static final String BANNER = "\033[32m"
+            + "                                                                                                                                 \n" +
+            "  ,----..                                                                            ____            ,----..    ,--,             \n" +
+            " /   /   \\                                                                         ,'  , `.         /   /   \\ ,--.'|     ,--,    \n" +
+            "|   :     :   __  ,-.                        ,---,                              ,-+-,.' _ |        |   :     :|  | :   ,--.'|    \n" +
+            ".   |  ;. / ,' ,'/ /|                    ,-+-. /  |  .--.--.                 ,-+-. ;   , ||        .   |  ;. /:  : '   |  |,     \n" +
+            ".   ; /--`  '  | |' | ,---.     ,---.   ,--.'|'   | /  /    '    ,--.--.    ,--.'|'   |  ||        .   ; /--` |  ' |   `--'_     \n" +
+            ";   | ;  __ |  |   ,'/     \\   /     \\ |   |  ,\"' ||  :  /`./   /       \\  |   |  ,', |  |,        ;   | ;    '  | |   ,' ,'|    \n" +
+            "|   : |.' .''  :  / /    /  | /    /  ||   | /  | ||  :  ;_    .--.  .-. | |   | /  | |--'         |   : |    |  | :   '  | |    \n" +
+            ".   | '_.' :|  | ' .    ' / |.    ' / ||   | |  | | \\  \\    `.  \\__\\/: . . |   : |  | ,            .   | '___ '  : |__ |  | :    \n" +
+            "'   ; : \\  |;  : | '   ;   /|'   ;   /||   | |  |/   `----.   \\ ,\" .--.; | |   : |  |/             '   ; : .'||  | '.'|'  : |__  \n" +
+            "'   | '/  .'|  , ; '   |  / |'   |  / ||   | |--'   /  /`--'  //  /  ,.  | |   | |`-'              '   | '/  :;  :    ;|  | '.'| \n" +
+            "|   :    /   ---'  |   :    ||   :    ||   |/      '--'.     /;  :   .'   \\|   ;/                  |   :    / |  ,   / ;  :    ; \n" +
+            " \\   \\ .'           \\   \\  /  \\   \\  / '---'         `--'---' |  ,     .-./'---'                    \\   \\ .'   ---`-'  |  ,   /  \n" +
+            "  `---`              `----'    `----'                          `--`---'                              `---`              ---`-'   \n" +
+            "                                                                                                                                 \n"
+            + "\033[90m  A CLI Agent built from scratch with Java\033[0m\n";
+
     /** 启动 REPL 主循环，直到用户输入 /exit 或 Ctrl+D */
     public void run() {
         // 初始化 JLine3 终端
         Terminal terminal;
         try {
             terminal = TerminalBuilder.builder()
-                    .system(true)  // 使用系统原生终端（支持 ANSI 颜色、历史等）
+                    .system(true)
+                    .dumb(true)   // IDEA 等非 TTY 环境下静默降级，不输出警告
                     .build();
         } catch (IOException e) {
-            System.err.println("Failed to initialize terminal: " + e.getMessage());
+            log.error("Failed to initialize terminal", e);
             return;
         }
 
@@ -84,7 +105,9 @@ public class Repl {
                 .terminal(terminal)
                 .build();
 
-        renderer.displaySystem("greensam-cli started. Type /help for commands, /exit to quit.");
+        System.out.println(BANNER);
+        System.out.println();
+        renderer.displaySystem("Type /help for commands, /exit to quit.");
 
         // 工具调用监听器：将 AgentLoop 中的工具执行事件转发给渲染器
         ToolCallListener listener = new ToolCallListener() {

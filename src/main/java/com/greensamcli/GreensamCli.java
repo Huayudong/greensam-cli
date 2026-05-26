@@ -12,6 +12,7 @@ import com.greensamcli.client.OpenAiStreamingChatClient;
 import com.greensamcli.config.AppConfig;
 import com.greensamcli.tools.ListFilesTool;
 import com.greensamcli.tools.ReadFileTool;
+import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
 
 /**
@@ -38,10 +39,8 @@ import okhttp3.OkHttpClient;
  *     │
  * repl.run()          ← 启动主循环
  * </pre>
- *
- * <p>这种"手动组装"的方式虽然不如 Spring IoC 自动化，
- * 但依赖关系一目了然，非常适合学习项目理解各组件如何协作。</p>
  */
+@Slf4j
 public class GreensamCli {
 
     public static void main(String[] args) {
@@ -71,7 +70,7 @@ public class GreensamCli {
             // 未来添加新工具只需在这里 register 即可
 
             // ⑤ 创建 AgentLoop（注入 API 客户端和工具注册表）
-            boolean useStreaming = !"false".equals(System.getenv("GREENSAM_STREAMING"));
+            boolean useStreaming = config.isStreaming();
 
             AgentLoop agentLoop = new AgentLoop(
                     chatClient, streamingClient,
@@ -87,11 +86,11 @@ public class GreensamCli {
 
         } catch (IllegalStateException e) {
             // 配置错误（缺少 API Key 等）
-            System.err.println("Configuration error: " + e.getMessage());
-            System.err.println("Please set the OPENAI_API_KEY environment variable.");
+            log.error("Configuration error: {}", e.getMessage());
+            log.error("Please set the OPENAI_API_KEY environment variable or create a .env file.");
             System.exit(1);
         } catch (Exception e) {
-            System.err.println("Fatal error: " + e.getMessage());
+            log.error("Fatal error", e);
             System.exit(1);
         }
     }
