@@ -23,7 +23,9 @@ import java.nio.file.Paths;
  */
 public class ReadFileTool implements Tool {
 
-    /** 单次读取的最大字符数，超出部分截断 */
+    /**
+     * 单次读取的最大字符数，超出部分截断
+     */
     private static final int MAX_CHARS = 10000;
 
     @Override

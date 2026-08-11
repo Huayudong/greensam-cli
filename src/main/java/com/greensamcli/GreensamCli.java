@@ -54,13 +54,19 @@ public class GreensamCli {
 
             // ③ 创建 API 客户端（同步 + 流式）
             ChatClient chatClient = new OpenAiChatClient(
-                    httpClient, objectMapper,
-                    config.getApiKey(), config.getBaseUrl(), config.getModel()
+                    httpClient,
+                    objectMapper,
+                    config.getApiKey(),
+                    config.getBaseUrl(),
+                    config.getModel()
             );
 
             OpenAiStreamingChatClient streamingClient = new OpenAiStreamingChatClient(
-                    httpClient, objectMapper,
-                    config.getApiKey(), config.getBaseUrl(), config.getModel()
+                    httpClient,
+                    objectMapper,
+                    config.getApiKey(),
+                    config.getBaseUrl(),
+                    config.getModel()
             );
 
             // ④ 注册工具

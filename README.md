@@ -10,7 +10,7 @@
 
 ### 什么是 Agent？
 
-传统聊天机器人是**单轮问答**：用户提问 → LLM 回答。
+传统聊天机器人是 **单轮问答**：用户提问 → LLM 回答。
 
 Agent 的本质区别在于 **Tool Calling（工具调用）**：LLM 不仅能生成文本，还能决定调用外部工具，读取工具结果后继续推理，直到得出最终答案。
 
@@ -22,36 +22,37 @@ Agent 的本质区别在于 **Tool Calling（工具调用）**：LLM 不仅能�
 用户输入
     │
     ▼
-┌─────────────────────────────────────┐
+┌───────────────────────────────────────┐
 │  将对话历史 + 工具定义 发送给 LLM     │
-└─────────────────────────────────────┘
+└───────────────────────────────────────┘
     │
     ▼
 ┌─────────────────┐
-│  LLM 返回响应     │
+│  LLM 返回响应   │
 └─────────────────┘
     │
     ▼
-┌──────────────────┐    否     ┌──────────────┐
-│  包含 tool_calls？ │─────────▶│ 输出文本给用户  │
-└──────────────────┘          └──────────────┘
+┌──────────────────────┐    否      ┌──────────────────┐
+│  包含 tool_calls？   │ ─────────▶ │  输出文本给用户  │
+└──────────────────────┘            └──────────────────┘
     │ 是
     ▼
-┌──────────────────┐
+┌────────────────────┐
 │  逐个执行工具      │
 │  read_file → 结果  │
 │  list_files → 结果 │
-└──────────────────┘
+└────────────────────┘
     │
     ▼
 ┌──────────────────────────────────────┐
-│  将工具结果追加到对话历史               │
-│  回到顶部，重新发送给 LLM              │
+│  将工具结果追加到对话历史            │
+│  回到顶部，重新发送给 LLM            │
 └──────────────────────────────────────┘
 ```
 
 关键点：
-- LLM 自己决定**是否**调用工具、调用**哪个**工具、传什么**参数**
+
+- LLM 自己决定 **是否**调用工具、调用 **哪个**工具、传什么 **参数**
 - 工具执行结果作为新消息回传给 LLM，LLM 基于结果继续推理
 - 循环直到 LLM 不再调用工具（`finish_reason: "stop"`）
 - 需要 `maxIterations` 上限防止无限循环
@@ -64,14 +65,16 @@ LLM 如何表达"我想调用工具"？通过 `tool_calls` 字段：
 {
   "role": "assistant",
   "content": null,
-  "tool_calls": [{
-    "id": "call_abc123",
-    "type": "function",
-    "function": {
-      "name": "read_file",
-      "arguments": "{\"path\":\"/tmp/test.txt\"}"
+  "tool_calls": [
+    {
+      "id": "call_abc123",
+      "type": "function",
+      "function": {
+        "name": "read_file",
+        "arguments": "{\"path\":\"/tmp/test.txt\"}"
+      }
     }
-  }]
+  ]
 }
 ```
 
@@ -89,7 +92,7 @@ LLM 如何表达"我想调用工具"？通过 `tool_calls` 字段：
 
 ### 流式输出（Streaming）
 
-普通 API 调用等整个响应生成完才返回。SSE 流式传输让你**边生成边显示**：
+普通 API 调用等整个响应生成完才返回。SSE 流式传输让你 **边生成边显示**：
 
 ```
 data: {"choices":[{"delta":{"content":"Hello"}}]}
@@ -124,7 +127,7 @@ data: [DONE]
 └───────────────────────────────────────────────────┘
 ```
 
-依赖方向严格单向：**CLI → Agent → Client → Model**。Agent 层不依赖终端，可以脱离 REPL 进行单元测试。
+依赖方向严格单向： **CLI → Agent → Client → Model**。Agent 层不依赖终端，可以脱离 REPL 进行单元测试。
 
 ### 核心组件详解
 
@@ -135,10 +138,10 @@ data: [DONE]
 1. 接收用户输入，追加到对话历史
 2. 调用 LLM API（同步或流式）
 3. 如果响应包含 `tool_calls`：
-   - 通知 `ToolCallListener`（用于 UI 显示）
-   - 通过 `ToolRegistry` 查找并执行对应工具
-   - 将工具结果作为 `role: "tool"` 消息追加到历史
-   - 回到步骤 2
+    - 通知 `ToolCallListener`（用于 UI 显示）
+    - 通过 `ToolRegistry` 查找并执行对应工具
+    - 将工具结果作为 `role: "tool"` 消息追加到历史
+    - 回到步骤 2
 4. 如果响应是纯文本：返回给用户
 
 内置 `MAX_ITERATIONS = 20` 防止无限循环。支持同步（`run`）和流式（`runStreaming`）两种模式。
@@ -150,8 +153,11 @@ data: [DONE]
 ```java
 public interface Tool {
     String getName();                    // 工具名称，如 "read_file"
+
     String getDescription();             // 描述，LLM 根据此决定何时调用
+
     JsonNode getParameters();            // JSON Schema，定义参数结构
+
     String execute(JsonNode arguments);  // 执行逻辑，返回字符串结果
 }
 ```
@@ -164,15 +170,24 @@ public interface Tool {
 
 ```java
 ChatMessage.system("你是一个助手")           // 系统提示词
-ChatMessage.user("读取 /tmp/test.txt")       // 用户输入
-ChatMessage.assistant("文件内容是...")         // LLM 文本回复
-ChatMessage.assistantWithToolCalls(toolCalls) // LLM 工具调用
-ChatMessage.toolResult(id, name, content)     // 工具执行结果
+ChatMessage.
+
+user("读取 /tmp/test.txt")       // 用户输入
+ChatMessage.
+
+assistant("文件内容是...")         // LLM 文本回复
+ChatMessage.
+
+assistantWithToolCalls(toolCalls) // LLM 工具调用
+ChatMessage.
+
+toolResult(id, name, content)     // 工具执行结果
 ```
 
 #### OpenAiChatClient（client/OpenAiChatClient.java）
 
 基于 OkHttp 的 API 客户端：
+
 - 构建请求体（Jackson 序列化）
 - 设置 `Authorization: Bearer` 头
 - 解析响应为 `ChatResponse` 对象
@@ -181,6 +196,7 @@ ChatMessage.toolResult(id, name, content)     // 工具执行结果
 #### OpenAiStreamingChatClient（client/OpenAiStreamingChatClient.java）
 
 SSE 流式实现：
+
 - 请求体添加 `"stream": true`
 - 逐行读取 `data:` 前缀的 SSE 事件
 - 拼接 `delta.content` 片段
@@ -190,6 +206,7 @@ SSE 流式实现：
 #### Repl（cli/Repl.java）
 
 基于 JLine3 的终端 REPL：
+
 - 箭头键浏览历史、Ctrl+C 中断、Ctrl+D 退出
 - 内置命令：`/help`、`/clear`、`/exit`
 - 流式模式下逐字符输出带 ANSI 颜色
@@ -243,6 +260,18 @@ src/test/java/com/greensamcli/
 - Java 17+
 - Maven 3.8+
 
+### git 版本控制
+
+```bash
+git push origin master     # 只推 gitee
+
+git push github master     # 只推 github
+
+git push all master        # 同时推 gitee 和 github（并行推送）
+
+git pull                   # 默认从 gitee 拉（origin/master）
+```
+
 ### 构建与运行
 
 ```bash
@@ -261,21 +290,21 @@ GREENSAM_STREAMING=false java -jar target/greensam-cli-0.0.1-SNAPSHOT.jar
 
 ### 环境变量
 
-| 变量 | 必须 | 默认值 | 说明 |
-|------|------|--------|------|
-| `OPENAI_API_KEY` | 是 | - | API 密钥 |
-| `OPENAI_BASE_URL` | 否 | `https://api.openai.com/v1` | API 地址（可用于兼容接口） |
-| `GREENSAM_MODEL` | 否 | `gpt-4o` | 模型名称 |
-| `GREENSAM_SYSTEM_PROMPT` | 否 | 内置提示词 | 系统提示词 |
-| `GREENSAM_STREAMING` | 否 | `true` | 是否启用流式输出 |
+| 变量                     | 必须 | 默认值                      | 说明                       |
+|--------------------------|------|-----------------------------|----------------------------|
+| `OPENAI_API_KEY`         | 是   | -                           | API 密钥                   |
+| `OPENAI_BASE_URL`        | 否   | `https://api.openai.com/v1` | API 地址（可用于兼容接口） |
+| `GREENSAM_MODEL`         | 否   | `gpt-4o`                    | 模型名称                   |
+| `GREENSAM_SYSTEM_PROMPT` | 否   | 内置提示词                  | 系统提示词                 |
+| `GREENSAM_STREAMING`     | 否   | `true`                      | 是否启用流式输出           |
 
 ### REPL 命令
 
-| 命令 | 说明 |
-|------|------|
-| `/help` | 显示帮助 |
+| 命令     | 说明         |
+|----------|--------------|
+| `/help`  | 显示帮助     |
 | `/clear` | 清空对话历史 |
-| `/exit` | 退出程序 |
+| `/exit`  | 退出程序     |
 
 ### 运行测试
 
@@ -289,15 +318,15 @@ mvn test
 
 ## 技术选型
 
-| 依赖 | 版本 | 用途 |
-|------|------|------|
-| OkHttp | 4.12.0 | HTTP 客户端，同步和 SSE 流式 |
-| Jackson | 2.20.1 | JSON 序列化/反序列化 |
-| JLine3 | 3.26.3 | 终端 REPL（历史、补全、ANSI） |
-| SLF4J + slf4j-simple | 2.0.16 | 日志 |
-| Lombok | 1.18.36 | 减少样板代码 |
-| JUnit 5 | 5.10.2 | 单元测试 |
-| MockWebServer | 4.12.0 | API Mock 测试 |
+| 依赖                 | 版本    | 用途                          |
+|----------------------|---------|-------------------------------|
+| OkHttp               | 4.12.0  | HTTP 客户端，同步和 SSE 流式  |
+| Jackson              | 2.20.1  | JSON 序列化/反序列化          |
+| JLine3               | 3.26.3  | 终端 REPL（历史、补全、ANSI） |
+| SLF4J + slf4j-simple | 2.0.16  | 日志                          |
+| Lombok               | 1.18.36 | 减少样板代码                  |
+| JUnit 5              | 5.10.2  | 单元测试                      |
+| MockWebServer        | 4.12.0  | API Mock 测试                 |
 
 ---
 
@@ -305,13 +334,13 @@ mvn test
 
 ### 1. 更多工具
 
-| 工具 | 说明 | 难度 |
-|------|------|------|
-| `WriteFileTool` | 写入/创建文件 | 简单 |
-| `GrepTool` | 正则搜索文件内容 | 简单 |
-| `BashTool` | 执行 shell 命令 | 中等 |
-| `EditTool` | 精确替换文件中的字符串（类似 Claude Code） | 中等 |
-| `WebSearchTool` | 联网搜索 | 中等 |
+| 工具            | 说明                                       | 难度 |
+|-----------------|--------------------------------------------|------|
+| `WriteFileTool` | 写入/创建文件                              | 简单 |
+| `GrepTool`      | 正则搜索文件内容                           | 简单 |
+| `BashTool`      | 执行 shell 命令                            | 中等 |
+| `EditTool`      | 精确替换文件中的字符串（类似 Claude Code） | 中等 |
+| `WebSearchTool` | 联网搜索                                   | 中等 |
 
 添加新工具只需实现 `Tool` 接口，然后在 `GreensamCli.main()` 中注册：
 

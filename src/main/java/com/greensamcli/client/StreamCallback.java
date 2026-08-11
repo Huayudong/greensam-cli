@@ -45,6 +45,8 @@ public interface StreamCallback {
      */
     void onComplete(ChatMessage fullAssistantMessage);
 
-    /** 流式传输过程中发生错误时触发 */
+    /**
+     * 流式传输过程中发生错误时触发
+     */
     void onError(Exception e);
 }

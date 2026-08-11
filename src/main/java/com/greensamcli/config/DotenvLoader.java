@@ -7,18 +7,19 @@ import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Minimal .env file loader.
- * Reads KEY=VALUE pairs from a .env file.
- * Lines starting with # are comments. Blank lines are skipped.
- * Values may be unquoted, single-quoted, or double-quoted.
+ * 最小化的 .env 文件加载器。
+ * 从 .env 文件中读取 KEY=VALUE 键值对。
+ * 以 # 开头的行视为注释，空行会被跳过。
+ * 值可以不带引号、带单引号或带双引号。
  */
 public final class DotenvLoader {
 
-    private DotenvLoader() {}
+    private DotenvLoader() {
+    }
 
     /**
-     * Loads env vars from the .env file in the given directory.
-     * Returns an empty map if the file does not exist.
+     * 从指定目录的 .env 文件中加载环境变量。
+     * 文件不存在时返回空 map。
      */
     public static Map<String, String> load(Path directory) {
         Path envFile = directory.resolve(".env");

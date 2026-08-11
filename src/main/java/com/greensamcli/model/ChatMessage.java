@@ -36,10 +36,14 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ChatMessage {
 
-    /** 消息角色：system / user / assistant / tool */
+    /**
+     * 消息角色：system / user / assistant / tool
+     */
     private String role;
 
-    /** 消息文本内容。当 assistant 消息包含 tool_calls 时，content 可能为 null */
+    /**
+     * 消息文本内容。当 assistant 消息包含 tool_calls 时，content 可能为 null
+     */
     private String content;
 
     /**
@@ -57,7 +61,9 @@ public class ChatMessage {
     @JsonProperty("tool_call_id")
     private String toolCallId;
 
-    /** 工具名称。仅 role="tool" 时使用，标识这个结果来自哪个工具 */
+    /**
+     * 工具名称。仅 role="tool" 时使用，标识这个结果来自哪个工具
+     */
     private String name;
 
     /**
@@ -72,7 +78,9 @@ public class ChatMessage {
                 .build();
     }
 
-    /** 创建用户消息，即用户在终端输入的内容 */
+    /**
+     * 创建用户消息，即用户在终端输入的内容
+     */
     public static ChatMessage user(String content) {
         return ChatMessage.builder()
                 .role("user")
@@ -80,7 +88,9 @@ public class ChatMessage {
                 .build();
     }
 
-    /** 创建纯文本的 assistant 回复（不包含工具调用） */
+    /**
+     * 创建纯文本的 assistant 回复（不包含工具调用）
+     */
     public static ChatMessage assistant(String content) {
         return ChatMessage.builder()
                 .role("assistant")

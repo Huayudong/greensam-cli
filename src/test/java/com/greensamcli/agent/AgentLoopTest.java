@@ -77,7 +77,7 @@ class AgentLoopTest {
         };
         toolRegistry.register(echoTool);
 
-        // First response: tool call
+        // 第一次响应：工具调用
         ToolCall toolCall = ToolCall.builder()
                 .id("call_1")
                 .type("function")
@@ -87,7 +87,7 @@ class AgentLoopTest {
                 new ChatResponse.Choice(0, ChatMessage.assistantWithToolCalls(List.of(toolCall)), "tool_calls")
         ), null));
 
-        // Second response: text
+        // 第二次响应：文本
         responses.add(new ChatResponse(null, List.of(
                 new ChatResponse.Choice(0, ChatMessage.assistant("I echoed your message."), "stop")
         ), null));
@@ -96,10 +96,10 @@ class AgentLoopTest {
         ChatMessage result = loop.run("Echo test", null);
 
         assertEquals("I echoed your message.", result.getContent());
-        assertEquals(2, callCount); // Two API calls: tool call + follow-up
+        assertEquals(2, callCount); // 两次 API 调用：工具调用 + 后续调用
 
         List<ChatMessage> history = loop.getConversationHistory();
-        // system + user + assistant(tool_calls) + tool_result + assistant(text)
+        // system + user + assistant(含 tool_calls) + tool_result + assistant(文本)
         assertEquals(5, history.size());
         assertEquals("tool", history.get(3).getRole());
         assertEquals("call_1", history.get(3).getToolCallId());
@@ -124,7 +124,7 @@ class AgentLoopTest {
         AgentLoop loop = new AgentLoop(chatClient, toolRegistry, objectMapper, "test");
         loop.run("Hi", listener);
 
-        assertTrue(events.isEmpty()); // No tool calls, no events
+        assertTrue(events.isEmpty()); // 没有工具调用，没有事件
     }
 
     @Test
@@ -170,14 +170,14 @@ class AgentLoopTest {
                 .function(new ToolCall.FunctionCall("echo", "{}"))
                 .build();
 
-        // Return tool_calls forever
+        // 持续返回 tool_calls（模拟死循环）
         for (int i = 0; i < 25; i++) {
             responses.add(new ChatResponse(null, List.of(
                     new ChatResponse.Choice(0, ChatMessage.assistantWithToolCalls(List.of(toolCall)), "tool_calls")
             ), null));
         }
 
-        // Register echo tool so it doesn't fail
+        // 注册 echo 工具，避免执行失败
         toolRegistry.register(new Tool() {
             @Override public String getName() { return "echo"; }
             @Override public String getDescription() { return "Echoes"; }
@@ -214,7 +214,7 @@ class AgentLoopTest {
 
         assertEquals("Tool failed, but I'll help anyway.", result.getContent());
 
-        // Error result should be in history
+        // 错误结果应出现在历史中
         List<ChatMessage> history = loop.getConversationHistory();
         ChatMessage toolResult = history.get(3);
         assertEquals("tool", toolResult.getRole());

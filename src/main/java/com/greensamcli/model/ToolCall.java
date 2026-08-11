@@ -38,13 +38,19 @@ import lombok.NoArgsConstructor;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class ToolCall {
 
-    /** 本次工具调用的唯一标识，用于将工具执行结果与调用请求一一对应 */
+    /**
+     * 本次工具调用的唯一标识，用于将工具执行结果与调用请求一一对应
+     */
     private String id;
 
-    /** 调用类型，目前固定为 "function" */
+    /**
+     * 调用类型，目前固定为 "function"
+     */
     private String type;
 
-    /** 被调用的函数信息，包含函数名和参数 */
+    /**
+     * 被调用的函数信息，包含函数名和参数
+     */
     @JsonProperty("function")
     private FunctionCall function;
 
@@ -56,7 +62,9 @@ public class ToolCall {
     @AllArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class FunctionCall {
-        /** 工具名称，如 "read_file"、"list_files" */
+        /**
+         * 工具名称，如 "read_file"、"list_files"
+         */
         private String name;
         /**
          * 工具参数，格式为 JSON 字符串。

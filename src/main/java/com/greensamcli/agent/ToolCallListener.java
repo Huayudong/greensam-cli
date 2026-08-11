@@ -31,12 +31,18 @@ import com.greensamcli.model.ToolCall;
  */
 public interface ToolCallListener {
 
-    /** 工具开始执行时触发（LLM 刚发起了 tool_call，工具即将执行） */
+    /**
+     * 工具开始执行时触发（LLM 刚发起了 tool_call，工具即将执行）
+     */
     void onToolCallStarted(ToolCall call);
 
-    /** 工具执行成功时触发，result 是工具返回的文本结果 */
+    /**
+     * 工具执行成功时触发，result 是工具返回的文本结果
+     */
     void onToolCallCompleted(String toolName, String result);
 
-    /** 工具执行失败时触发，error 是失败原因 */
+    /**
+     * 工具执行失败时触发，error 是失败原因
+     */
     void onToolCallFailed(String toolName, String error);
 }

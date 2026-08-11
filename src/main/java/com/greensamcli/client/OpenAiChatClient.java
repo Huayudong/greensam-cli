@@ -103,7 +103,9 @@ public class OpenAiChatClient implements ChatClient {
         }
     }
 
-    /** API 调用过程中的运行时异常 */
+    /**
+     * API 调用过程中的运行时异常
+     */
     public static class ChatClientException extends RuntimeException {
         public ChatClientException(String message) {
             super(message);

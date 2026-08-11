@@ -71,7 +71,7 @@ public class OpenAiStreamingChatClient implements StreamingChatClient {
 
     @Override
     public void sendStreaming(List<ChatMessage> messages, List<ToolDefinition> tools,
-                             StreamCallback callback) {
+                              StreamCallback callback) {
         // 构建请求体
         ChatRequest request = ChatRequest.builder()
                 .model(model)
@@ -227,7 +227,9 @@ public class OpenAiStreamingChatClient implements StreamingChatClient {
         }
     }
 
-    /** API 调用过程中的运行时异常 */
+    /**
+     * API 调用过程中的运行时异常
+     */
     public static class ChatClientException extends RuntimeException {
         public ChatClientException(String message) {
             super(message);

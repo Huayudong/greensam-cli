@@ -53,13 +53,17 @@ import java.io.IOException;
 public class Repl {
 
     private static final String PROMPT = "> ";
-    /** ANSI 颜色码，用于流式模式下 AI 回复的着色 */
+    /**
+     * ANSI 颜色码，用于流式模式下 AI 回复的着色
+     */
     private static final String RESET = "\033[0m";
     private static final String CYAN = "\033[36m";
 
     private final AgentLoop agentLoop;
     private final CliRenderer renderer;
-    /** 是否使用流式输出模式 */
+    /**
+     * 是否使用流式输出模式
+     */
     private final boolean useStreaming;
 
     public Repl(AgentLoop agentLoop, CliRenderer renderer, boolean useStreaming) {
@@ -86,7 +90,9 @@ public class Repl {
             "                                                                                                                                 \n"
             + "\033[90m  A CLI Agent built from scratch with Java\033[0m\n";
 
-    /** 启动 REPL 主循环，直到用户输入 /exit 或 Ctrl+D */
+    /**
+     * 启动 REPL 主循环，直到用户输入 /exit 或 Ctrl+D
+     */
     public void run() {
         // 初始化 JLine3 终端
         Terminal terminal;
@@ -188,11 +194,13 @@ public class Repl {
         try {
             terminal.close();
         } catch (IOException e) {
-            // ignore
+            // 忽略关闭时的异常
         }
     }
 
-    /** 同步模式：等待 Agent 完整响应后一次性显示 */
+    /**
+     * 同步模式：等待 Agent 完整响应后一次性显示
+     */
     private void runBlocking(String input, ToolCallListener listener) {
         try {
             ChatMessage response = agentLoop.run(input, listener);

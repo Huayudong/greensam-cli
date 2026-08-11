@@ -36,12 +36,18 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ChatRequest {
 
-    /** 模型名称，如 "gpt-4o"、"gpt-4o-mini" */
+    /**
+     * 模型名称，如 "gpt-4o"、"gpt-4o-mini"
+     */
     private String model;
 
-    /** 对话消息列表，按时间顺序排列：system → user → assistant → tool → ... */
+    /**
+     * 对话消息列表，按时间顺序排列：system → user → assistant → tool → ...
+     */
     private List<ChatMessage> messages;
 
-    /** 可用工具定义列表。为 null 时不发送，LLM 只能生成纯文本回复 */
+    /**
+     * 可用工具定义列表。为 null 时不发送，LLM 只能生成纯文本回复
+     */
     private List<ToolDefinition> tools;
 }

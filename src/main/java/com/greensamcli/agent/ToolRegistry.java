@@ -27,15 +27,21 @@ import java.util.Map;
  */
 public class ToolRegistry {
 
-    /** 工具名 → 工具实例的映射 */
+    /**
+     * 工具名 → 工具实例的映射
+     */
     private final Map<String, Tool> tools = new HashMap<>();
 
-    /** 注册一个工具，后续 LLM 可以通过名称调用它 */
+    /**
+     * 注册一个工具，后续 LLM 可以通过名称调用它
+     */
     public void register(Tool tool) {
         tools.put(tool.getName(), tool);
     }
 
-    /** 根据名称获取工具实例 */
+    /**
+     * 根据名称获取工具实例
+     */
     public Tool getTool(String name) {
         return tools.get(name);
     }

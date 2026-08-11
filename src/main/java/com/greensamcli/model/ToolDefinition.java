@@ -47,10 +47,14 @@ import lombok.NoArgsConstructor;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ToolDefinition {
 
-    /** 固定为 "function" */
+    /**
+     * 固定为 "function"
+     */
     private String type;
 
-    /** 函数定义，包含名称、描述和参数 Schema */
+    /**
+     * 函数定义，包含名称、描述和参数 Schema
+     */
     private FunctionDef function;
 
     /**
@@ -62,11 +66,17 @@ public class ToolDefinition {
     @AllArgsConstructor
     @JsonInclude(JsonInclude.Include.NON_NULL)
     public static class FunctionDef {
-        /** 工具名称，LLM 在 tool_call 中通过此名称指定要调用的工具 */
+        /**
+         * 工具名称，LLM 在 tool_call 中通过此名称指定要调用的工具
+         */
         private String name;
-        /** 工具描述，LLM 根据此描述判断在什么场景下应该调用此工具 */
+        /**
+         * 工具描述，LLM 根据此描述判断在什么场景下应该调用此工具
+         */
         private String description;
-        /** 参数的 JSON Schema，定义工具接受的参数类型和结构 */
+        /**
+         * 参数的 JSON Schema，定义工具接受的参数类型和结构
+         */
         private JsonNode parameters;
     }
 

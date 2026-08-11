@@ -38,7 +38,9 @@ public class AppConfig {
         this(Path.of("").toAbsolutePath());
     }
 
-    /** Package-private for testing with a custom directory. */
+    /**
+     * 包级私有构造函数，便于测试时指定自定义项目目录
+     */
     AppConfig(Path projectRoot) {
         this.fallbackEnv = DotenvLoader.load(projectRoot);
         this.apiKey = requireEnv("OPENAI_API_KEY");
@@ -49,7 +51,9 @@ public class AppConfig {
         this.streaming = !"false".equalsIgnoreCase(resolveEnv("GREENSAM_STREAMING"));
     }
 
-    /** System.getenv() 优先，.env 文件作为回退。 */
+    /**
+     * System.getenv() 优先，.env 文件作为回退。
+     */
     private String resolveEnv(String name) {
         String value = System.getenv(name);
         if (value != null) {
@@ -58,18 +62,22 @@ public class AppConfig {
         return fallbackEnv.get(name);
     }
 
-    /** 读取必须的配置，缺失时抛出异常（fail-fast）。 */
+    /**
+     * 读取必须的配置，缺失时抛出异常（fail-fast）。
+     */
     private String requireEnv(String name) {
         String value = resolveEnv(name);
         if (value == null || value.isBlank()) {
             throw new IllegalStateException(
                     "Required environment variable not set: " + name
-                    + ". Set it in system env or create a .env file in the project root.");
+                            + ". Set it in system env or create a .env file in the project root.");
         }
         return value.trim();
     }
 
-    /** 读取可选的配置，缺失时使用默认值。 */
+    /**
+     * 读取可选的配置，缺失时使用默认值。
+     */
     private String getEnv(String name, String defaultValue) {
         String value = resolveEnv(name);
         return (value == null || value.isBlank()) ? defaultValue : value.trim();

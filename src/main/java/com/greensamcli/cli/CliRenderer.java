@@ -14,18 +14,28 @@ package com.greensamcli.cli;
  */
 public interface CliRenderer {
 
-    /** 显示系统消息（灰色，如启动提示、清除历史等） */
+    /**
+     * 显示系统消息（灰色，如启动提示、清除历史等）
+     */
     void displaySystem(String text);
 
-    /** 显示 AI 回复（青色，这是主要的对话输出） */
+    /**
+     * 显示 AI 回复（青色，这是主要的对话输出）
+     */
     void displayAssistant(String text);
 
-    /** 显示工具调用信息（黄色，如 "[tool] read_file({"path":"/tmp/test"})"） */
+    /**
+     * 显示工具调用信息（黄色，如 "[tool] read_file({"path":"/tmp/test"})"）
+     */
     void displayToolCall(String toolName, String arguments);
 
-    /** 显示工具执行结果（绿色，截断过长的结果） */
+    /**
+     * 显示工具执行结果（绿色，截断过长的结果）
+     */
     void displayToolResult(String toolName, String result);
 
-    /** 显示错误消息（红色，如 API 错误、工具执行失败等） */
+    /**
+     * 显示错误消息（红色，如 API 错误、工具执行失败等）
+     */
     void displayError(String message);
 }

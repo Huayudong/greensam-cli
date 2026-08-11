@@ -37,7 +37,7 @@ import java.util.concurrent.CountDownLatch;
  *        │   ④ 将 assistant 消息（含 tool_calls）追加到历史
  *        │       │
  *        │   ⑤ 逐个执行工具：
- *        │       for each tool_call:
+ *        │       for each tool_call:（对每个 tool_call:）
  *        │           a. 通知 listener（终端显示）
  *        │           b. 通过 ToolRegistry 查找并执行工具
  *        │           c. 将工具结果作为 role="tool" 消息追加到历史
@@ -64,22 +64,34 @@ import java.util.concurrent.CountDownLatch;
 @Slf4j
 public class AgentLoop {
 
-    /** 最大循环次数，防止 LLM 陷入无限工具调用循环 */
+    /**
+     * 最大循环次数，防止 LLM 陷入无限工具调用循环
+     */
     private static final int MAX_ITERATIONS = 20;
 
-    /** 同步 API 客户端，用于 run() 方法 */
+    /**
+     * 同步 API 客户端，用于 run() 方法
+     */
     private final ChatClient client;
 
-    /** 流式 API 客户端，用于 runStreaming() 方法。可以为 null */
+    /**
+     * 流式 API 客户端，用于 runStreaming() 方法。可以为 null
+     */
     private final StreamingChatClient streamingClient;
 
-    /** 工具注册表，提供工具查找和执行能力 */
+    /**
+     * 工具注册表，提供工具查找和执行能力
+     */
     private final ToolRegistry toolRegistry;
 
-    /** JSON 解析器，用于将 tool_call 的 arguments 字符串解析为 JsonNode */
+    /**
+     * JSON 解析器，用于将 tool_call 的 arguments 字符串解析为 JsonNode
+     */
     private final ObjectMapper objectMapper;
 
-    /** 系统提示词，在整个对话中只发送一次（放在 messages 数组最前面） */
+    /**
+     * 系统提示词，在整个对话中只发送一次（放在 messages 数组最前面）
+     */
     private final String systemPrompt;
 
     /**
@@ -89,13 +101,17 @@ public class AgentLoop {
      */
     private final List<ChatMessage> conversationHistory;
 
-    /** 同步模式构造函数（不使用流式） */
+    /**
+     * 同步模式构造函数（不使用流式）
+     */
     public AgentLoop(ChatClient client, ToolRegistry toolRegistry,
                      ObjectMapper objectMapper, String systemPrompt) {
         this(client, null, toolRegistry, objectMapper, systemPrompt);
     }
 
-    /** 完整构造函数，同时支持同步和流式模式 */
+    /**
+     * 完整构造函数，同时支持同步和流式模式
+     */
     public AgentLoop(ChatClient client, StreamingChatClient streamingClient,
                      ToolRegistry toolRegistry, ObjectMapper objectMapper, String systemPrompt) {
         this.client = client;
@@ -131,9 +147,9 @@ public class AgentLoop {
      * LLM 的文本增量通过 streamCallback 实时回调（打字机效果），
      * 工具调用仍为同步执行。
      *
-     * @param userInput       用户输入
-     * @param listener        工具调用事件监听器
-     * @param streamCallback  流式文本回调，每收到一段文本增量就触发
+     * @param userInput      用户输入
+     * @param listener       工具调用事件监听器
+     * @param streamCallback 流式文本回调，每收到一段文本增量就触发
      */
     public void runStreaming(String userInput, ToolCallListener listener, StreamCallback streamCallback) {
         if (conversationHistory.isEmpty()) {
@@ -325,17 +341,23 @@ public class AgentLoop {
         }
     }
 
-    /** 获取对话历史的不可变副本 */
+    /**
+     * 获取对话历史的不可变副本
+     */
     public List<ChatMessage> getConversationHistory() {
         return List.copyOf(conversationHistory);
     }
 
-    /** 清空对话历史（/clear 命令使用），下次 run 时会重新插入系统提示词 */
+    /**
+     * 清空对话历史（/clear 命令使用），下次 run 时会重新插入系统提示词
+     */
     public void clearHistory() {
         conversationHistory.clear();
     }
 
-    /** Agent 循环过程中的异常 */
+    /**
+     * Agent 循环过程中的异常
+     */
     public static class AgentLoopException extends RuntimeException {
         public AgentLoopException(String message) {
             super(message);
