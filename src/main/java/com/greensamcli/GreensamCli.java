@@ -12,6 +12,7 @@ import com.greensamcli.client.OpenAiStreamingChatClient;
 import com.greensamcli.config.AppConfig;
 import com.greensamcli.tools.ListFilesTool;
 import com.greensamcli.tools.ReadFileTool;
+import com.greensamcli.tools.WriteFileTool;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
 
@@ -29,7 +30,7 @@ import okhttp3.OkHttpClient;
  * ├── OpenAiChatClient          ← 同步 API 客户端
  * ├── OpenAiStreamingChatClient ← 流式 API 客户端
  *     │
- * ToolRegistry        ← 注册可用工具（ReadFileTool, ListFilesTool）
+ * ToolRegistry        ← 注册可用工具（ReadFileTool, ListFilesTool, WriteFileTool）
  *     │
  * AgentLoop           ← 核心推理引擎（注入 client + registry）
  *     │
@@ -73,6 +74,7 @@ public class GreensamCli {
             ToolRegistry toolRegistry = new ToolRegistry();
             toolRegistry.register(new ReadFileTool());
             toolRegistry.register(new ListFilesTool());
+            toolRegistry.register(new WriteFileTool());
             // 未来添加新工具只需在这里 register 即可
 
             // ⑤ 创建 AgentLoop（注入 API 客户端和工具注册表）

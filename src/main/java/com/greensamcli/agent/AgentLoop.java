@@ -68,32 +68,26 @@ public class AgentLoop {
      * 最大循环次数，防止 LLM 陷入无限工具调用循环
      */
     private static final int MAX_ITERATIONS = 20;
-
     /**
      * 同步 API 客户端，用于 run() 方法
      */
     private final ChatClient client;
-
     /**
      * 流式 API 客户端，用于 runStreaming() 方法。可以为 null
      */
     private final StreamingChatClient streamingClient;
-
     /**
      * 工具注册表，提供工具查找和执行能力
      */
     private final ToolRegistry toolRegistry;
-
     /**
      * JSON 解析器，用于将 tool_call 的 arguments 字符串解析为 JsonNode
      */
     private final ObjectMapper objectMapper;
-
     /**
      * 系统提示词，在整个对话中只发送一次（放在 messages 数组最前面）
      */
     private final String systemPrompt;
-
     /**
      * 完整的对话历史，贯穿整个会话。
      * 包含所有角色的消息：system → user → assistant → tool → assistant → ...

@@ -169,19 +169,11 @@ public interface Tool {
 用工厂方法创建不同角色的消息：
 
 ```java
-ChatMessage.system("你是一个助手")           // 系统提示词
-ChatMessage.
-
-user("读取 /tmp/test.txt")       // 用户输入
-ChatMessage.
-
-assistant("文件内容是...")         // LLM 文本回复
-ChatMessage.
-
-assistantWithToolCalls(toolCalls) // LLM 工具调用
-ChatMessage.
-
-toolResult(id, name, content)     // 工具执行结果
+ChatMessage system = ChatMessage.system("你是一个助手");           // 系统提示词
+ChatMessage user = ChatMessage.user("读取 /tmp/test.txt");       // 用户输入
+ChatMessage assistant = ChatMessage.assistant("文件内容是...");         // LLM 文本回复
+ChatMessage toolCall = ChatMessage.assistantWithToolCalls(toolCalls); // LLM 工具调用
+ChatMessage toolResult = ChatMessage.toolResult(id, name, content);     // 工具执行结果
 ```
 
 #### OpenAiChatClient（client/OpenAiChatClient.java）
@@ -336,7 +328,7 @@ mvn test
 
 | 工具            | 说明                                       | 难度 |
 |-----------------|--------------------------------------------|------|
-| `WriteFileTool` | 写入/创建文件                              | 简单 |
+| `WriteFileTool` | 写入/创建文件 ✅ 已实现                    | 简单 |
 | `GrepTool`      | 正则搜索文件内容                           | 简单 |
 | `BashTool`      | 执行 shell 命令                            | 中等 |
 | `EditTool`      | 精确替换文件中的字符串（类似 Claude Code） | 中等 |
@@ -345,7 +337,7 @@ mvn test
 添加新工具只需实现 `Tool` 接口，然后在 `GreensamCli.main()` 中注册：
 
 ```java
-toolRegistry.register(new WriteFileTool());
+ToolRegistry toolRegistry = toolRegistry.register(new WriteFileTool());
 ```
 
 ### 2. 权限系统

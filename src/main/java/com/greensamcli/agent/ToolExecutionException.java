@@ -11,6 +11,7 @@ package com.greensamcli.agent;
  * AgentLoop 把 "Error: File not found" 回传给 LLM → LLM 可能会换一个路径重试。</p>
  */
 public class ToolExecutionException extends RuntimeException {
+
     public ToolExecutionException(String message) {
         super(message);
     }
