@@ -10,6 +10,10 @@ import com.greensamcli.client.ChatClient;
 import com.greensamcli.client.OpenAiChatClient;
 import com.greensamcli.client.OpenAiStreamingChatClient;
 import com.greensamcli.config.AppConfig;
+import com.greensamcli.tools.EditFileTool;
+import com.greensamcli.tools.ExecuteCommandTool;
+import com.greensamcli.tools.GlobTool;
+import com.greensamcli.tools.GrepTool;
 import com.greensamcli.tools.ListFilesTool;
 import com.greensamcli.tools.ReadFileTool;
 import com.greensamcli.tools.WriteFileTool;
@@ -30,7 +34,7 @@ import okhttp3.OkHttpClient;
  * ├── OpenAiChatClient          ← 同步 API 客户端
  * ├── OpenAiStreamingChatClient ← 流式 API 客户端
  *     │
- * ToolRegistry        ← 注册可用工具（ReadFileTool, ListFilesTool, WriteFileTool）
+ * ToolRegistry        ← 注册可用工具（read/list/write/edit/grep/glob/execute_command）
  *     │
  * AgentLoop           ← 核心推理引擎（注入 client + registry）
  *     │
@@ -72,9 +76,16 @@ public class GreensamCli {
 
             // ④ 注册工具
             ToolRegistry toolRegistry = new ToolRegistry();
+            // 文件读写类
             toolRegistry.register(new ReadFileTool());
             toolRegistry.register(new ListFilesTool());
             toolRegistry.register(new WriteFileTool());
+            toolRegistry.register(new EditFileTool());
+            // 检索导航类
+            toolRegistry.register(new GrepTool());
+            toolRegistry.register(new GlobTool());
+            // 命令执行类
+            toolRegistry.register(new ExecuteCommandTool());
             // 未来添加新工具只需在这里 register 即可
 
             // ⑤ 创建 AgentLoop（注入 API 客户端和工具注册表）

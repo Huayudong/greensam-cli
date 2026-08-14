@@ -30,7 +30,7 @@ import java.nio.file.Paths;
  * <p>安全措施：单次写入字节数不得超过 {@link #MAX_WRITE_FILE_BYTES}，超限即拒，
  * 避免磁盘灌满与误覆盖。</p>
  *
- * @author Ma Chengrui
+ * @author Macro Ray
  * @since 2026-08-11
  */
 @Slf4j

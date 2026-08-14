@@ -33,21 +33,6 @@ import com.fasterxml.jackson.databind.JsonNode;
  *
  * <p>添加新工具只需：① 实现此接口 ② 在 GreensamCli.main() 中注册。
  * 不需要修改任何其他代码。</p>
- *
- * <p>示例：</p>
- * <pre>{@code
- * public class WriteFileTool implements Tool {
- *     public String getName() { return "write_file"; }
- *     public String getDescription() { return "将内容写入文件"; }
- *     public JsonNode getParameters() { ... }  // JSON Schema
- *     public String execute(JsonNode args) {
- *         String path = args.get("path").asText();
- *         String content = args.get("content").asText();
- *         Files.writeString(Path.of(path), content);
- *         return "File written successfully: " + path;
- *     }
- * }
- * }</pre>
  */
 public interface Tool {
 
