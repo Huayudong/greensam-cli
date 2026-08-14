@@ -33,15 +33,17 @@
         </dependency>
 
         <!-- Logging -->
+        <!-- slf4j-api：日志门面，代码统一通过 @Slf4j 调用，与具体后端解耦 -->
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-api</artifactId>
             <version>2.0.16</version>
         </dependency>
+        <!-- logback-classic：slf4j 的完整实现，配合 src/main/resources/logback.xml 配置。 -->
         <dependency>
-            <groupId>org.slf4j</groupId>
-            <artifactId>slf4j-simple</artifactId>
-            <version>2.0.16</version>
+            <groupId>ch.qos.logback</groupId>
+            <artifactId>logback-classic</artifactId>
+            <version>1.5.12</version>
             <scope>runtime</scope>
         </dependency>
 
