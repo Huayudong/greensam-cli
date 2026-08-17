@@ -1,9 +1,7 @@
 package com.greensamcli.tools;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.greensamcli.agent.Tool;
+import com.greensamcli.agent.AbstractTool;
+import com.greensamcli.agent.Param;
 import com.greensamcli.agent.ToolExecutionException;
 
 import java.io.IOException;
@@ -21,12 +19,16 @@ import java.nio.file.Paths;
  * <p>安全措施：超过 {@link #MAX_CHARS} 个字符的文件会被截断，
  * 防止将超大文件内容发送给 LLM（会消耗大量 token 且可能超出上下文窗口限制）。</p>
  */
-public class ReadFileTool implements Tool {
+public class ReadFileTool extends AbstractTool<ReadFileTool.Args> {
 
     /**
      * 单次读取的最大字符数，超出部分截断
      */
     private static final int MAX_CHARS = 10000;
+
+    public ReadFileTool() {
+        super(Args.class);
+    }
 
     @Override
     public String getName() {
@@ -39,36 +41,20 @@ public class ReadFileTool implements Tool {
     }
 
     /**
-     * 返回参数的 JSON Schema，告诉 LLM 这个工具需要一个 "path" 参数。
-     * LLM 看到这个定义后就知道应该传什么参数。
+     * 参数声明：path 必填。参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
      */
-    @Override
-    public JsonNode getParameters() {
-        ObjectNode params = JsonNodeFactory.instance.objectNode();
-        params.put("type", "object");
-
-        // 定义 "path" 参数：字符串类型，必填
-        ObjectNode properties = JsonNodeFactory.instance.objectNode();
-        ObjectNode pathProp = JsonNodeFactory.instance.objectNode();
-        pathProp.put("type", "string");
-        pathProp.put("description", "Absolute or relative path to the file to read");
-        properties.set("path", pathProp);
-
-        params.set("properties", properties);
-
-        JsonNodeFactory.instance.arrayNode().add("path");
-        params.putArray("required").add("path");
-        return params;
+    public record Args(
+            @Param(value = "Absolute or relative path to the file to read", required = true) String path) {
     }
 
     /**
      * 执行文件读取。
      *
-     * <p>执行流程：解析 path 参数 → 检查文件存在性和类型 → 读取内容 → 截断超长文件</p>
+     * <p>执行流程：取 path 参数 → 检查文件存在性和类型 → 读取内容 → 截断超长文件</p>
      */
     @Override
-    public String execute(JsonNode arguments) throws ToolExecutionException {
-        String pathStr = arguments.get("path").asText();
+    protected String doExecute(Args args) throws ToolExecutionException {
+        String pathStr = args.path();
         Path path = Paths.get(pathStr);
 
         // 前置检查：文件是否存在

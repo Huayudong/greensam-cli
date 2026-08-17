@@ -1,9 +1,8 @@
 package com.greensamcli.tools;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.greensamcli.agent.Tool;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.greensamcli.agent.AbstractTool;
+import com.greensamcli.agent.Param;
 import com.greensamcli.agent.ToolExecutionException;
 import lombok.extern.slf4j.Slf4j;
 
@@ -38,13 +37,17 @@ import java.util.regex.Pattern;
  * @since 2026-08-13
  */
 @Slf4j
-public class EditFileTool implements Tool {
+public class EditFileTool extends AbstractTool<EditFileTool.Args> {
 
     /**
      * 可编辑文件的大小上限（UTF-8 字节）。
      * <p>5MB 对常规代码 / 文档绰绰有余；超过即拒，避免把超大文件整体读入内存。
      */
     private static final int MAX_FILE_BYTES = 5 * 1024 * 1024;
+
+    public EditFileTool() {
+        super(Args.class);
+    }
 
     @Override
     public String getName() {
@@ -59,61 +62,47 @@ public class EditFileTool implements Tool {
     }
 
     /**
-     * 参数 Schema：path / old_string / new_string 必填，replace_all 可选。
-     * 三个核心参数类型清晰、无互斥关系，便于 LLM 准确构造。
+     * 参数声明：path / old_string / new_string 必填，replace_all 可选。
+     * 参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
      */
-    @Override
-    public JsonNode getParameters() {
-        ObjectNode params = JsonNodeFactory.instance.objectNode();
-        params.put("type", "object");
+    public record Args(
+            @Param(value = "Absolute or relative path of the file to edit", required = true) String path,
+            @Param(value = "The exact text to find. Must be unique unless replace_all is true.", required = true)
+            @JsonProperty("old_string") String oldString,
+            @Param(value = "The replacement text. Use empty string to delete the match.", required = true)
+            @JsonProperty("new_string") String newString,
+            @Param("If true, replace every occurrence. Default false.")
+            @JsonProperty("replace_all") Boolean replaceAll) {
 
-        ObjectNode properties = JsonNodeFactory.instance.objectNode();
-
-        ObjectNode pathProp = JsonNodeFactory.instance.objectNode();
-        pathProp.put("type", "string");
-        pathProp.put("description", "Absolute or relative path of the file to edit");
-        properties.set("path", pathProp);
-
-        ObjectNode oldProp = JsonNodeFactory.instance.objectNode();
-        oldProp.put("type", "string");
-        oldProp.put("description", "The exact text to find. Must be unique unless replace_all is true.");
-        properties.set("old_string", oldProp);
-
-        ObjectNode newProp = JsonNodeFactory.instance.objectNode();
-        newProp.put("type", "string");
-        newProp.put("description", "The replacement text. Use empty string to delete the match.");
-        properties.set("new_string", newProp);
-
-        ObjectNode replaceAllProp = JsonNodeFactory.instance.objectNode();
-        replaceAllProp.put("type", "boolean");
-        replaceAllProp.put("description", "If true, replace every occurrence. Default false.");
-        properties.set("replace_all", replaceAllProp);
-
-        params.set("properties", properties);
-        params.putArray("required").add("path").add("old_string").add("new_string");
-        return params;
+        public Args {
+            // new_string 允许缺失（删除场景），容错为空串；replace_all 缺省为 false
+            if (newString == null) {
+                newString = "";
+            }
+            if (replaceAll == null) {
+                replaceAll = false;
+            }
+        }
     }
 
     /**
      * 执行精确字符串替换。
      *
-     * <p>执行流程：解析参数 → 校验 → 读取全文 → 计数 old_string →
+     * <p>执行流程：参数绑定（含默认值）→ 校验 → 读取全文 → 计数 old_string →
      * 唯一性判定 → 替换 → 写回 → 记录变更日志。</p>
      *
-     * @param arguments 含 {@code path} / {@code old_string} / {@code new_string}，可选 {@code replace_all}
+     * @param args 已绑定的参数 record，new_string / replace_all 已兜底默认值
      * @return 替换结果描述：替换次数 + 首处命中行号
      * @throws ToolExecutionException 目标不存在/是目录、old_string 为空或 old==new、未命中或不唯一、写回失败时抛出
      */
     @Override
-    public String execute(JsonNode arguments) throws ToolExecutionException {
-        String pathStr = arguments.get("path").asText();
+    protected String doExecute(Args args) throws ToolExecutionException {
+        String pathStr = args.path();
         Path path = Paths.get(pathStr);
 
-        String oldString = arguments.get("old_string").asText();
-        // new_string 允许为空（删除场景），null 容错为空串
-        JsonNode newNode = arguments.get("new_string");
-        String newString = newNode == null || newNode.isNull() ? "" : newNode.asText();
-        boolean replaceAll = arguments.has("replace_all") && arguments.get("replace_all").asBoolean();
+        String oldString = args.oldString();
+        String newString = args.newString();
+        boolean replaceAll = args.replaceAll();
 
         // 前置校验
         validateEditRequest(oldString, newString, path);

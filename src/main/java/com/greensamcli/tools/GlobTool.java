@@ -1,9 +1,7 @@
 package com.greensamcli.tools;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.greensamcli.agent.Tool;
+import com.greensamcli.agent.AbstractTool;
+import com.greensamcli.agent.Param;
 import com.greensamcli.agent.ToolExecutionException;
 import lombok.extern.slf4j.Slf4j;
 
@@ -45,7 +43,7 @@ import java.util.List;
  * @since 2026-08-13
  */
 @Slf4j
-public class GlobTool implements Tool {
+public class GlobTool extends AbstractTool<GlobTool.Args> {
 
     /** 遍历时跳过的目录名，与 {@link GrepTool} 保持一致。 */
     private static final List<String> JUNK_DIRS = List.of(
@@ -53,6 +51,10 @@ public class GlobTool implements Tool {
     );
     /** 单次返回的匹配上限，防止超大目录树返回过多结果。 */
     private static final int MAX_RESULTS = 1000;
+
+    public GlobTool() {
+        super(Args.class);
+    }
 
     @Override
     public String getName() {
@@ -66,41 +68,31 @@ public class GlobTool implements Tool {
     }
 
     /**
-     * 参数 Schema：pattern 必填，path 可选（默认当前目录）。
+     * 参数声明：pattern 必填，path 可选（默认当前目录）。
+     * 参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
      */
-    @Override
-    public JsonNode getParameters() {
-        ObjectNode params = JsonNodeFactory.instance.objectNode();
-        params.put("type", "object");
+    public record Args(
+            @Param(value = "Glob pattern, e.g. **/*.java or *.md", required = true) String pattern,
+            @Param("Directory to search in. Defaults to current directory.") String path) {
 
-        ObjectNode properties = JsonNodeFactory.instance.objectNode();
-
-        ObjectNode patternProp = JsonNodeFactory.instance.objectNode();
-        patternProp.put("type", "string");
-        patternProp.put("description", "Glob pattern, e.g. **/*.java or *.md");
-        properties.set("pattern", patternProp);
-
-        ObjectNode pathProp = JsonNodeFactory.instance.objectNode();
-        pathProp.put("type", "string");
-        pathProp.put("description", "Directory to search in. Defaults to current directory.");
-        properties.set("path", pathProp);
-
-        params.set("properties", properties);
-        params.putArray("required").add("pattern");
-        return params;
+        public Args {
+            if (path == null) {
+                path = ".";
+            }
+        }
     }
 
     /**
      * 执行文件名模式匹配。
      *
-     * @param arguments 含 {@code pattern}，可选 {@code path}
+     * @param args 已绑定的参数 record，path 已兜底为当前目录
      * @return 匹配的文件路径列表（相对搜索根，每行一个），末尾带计数；无匹配时返回明确提示
      * @throws ToolExecutionException 路径不存在、glob 非法、遍历失败时抛出
      */
     @Override
-    public String execute(JsonNode arguments) throws ToolExecutionException {
-        String patternStr = arguments.get("pattern").asText();
-        String pathStr = arguments.has("path") ? arguments.get("path").asText() : ".";
+    protected String doExecute(Args args) throws ToolExecutionException {
+        String patternStr = args.pattern();
+        String pathStr = args.path();
 
         Path root = Paths.get(pathStr);
         if (!Files.exists(root)) {

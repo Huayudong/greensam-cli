@@ -1,15 +1,15 @@
 package com.greensamcli.tools;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.greensamcli.agent.Tool;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.greensamcli.agent.AbstractTool;
+import com.greensamcli.agent.Param;
 import com.greensamcli.agent.ToolExecutionException;
 import lombok.extern.slf4j.Slf4j;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.List;
@@ -42,7 +42,7 @@ import java.util.regex.Pattern;
  * @since 2026-08-13
  */
 @Slf4j
-public class ExecuteCommandTool implements Tool {
+public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
 
     /** 默认超时秒数。 */
     private static final int DEFAULT_TIMEOUT_SECONDS = 120;
@@ -76,6 +76,10 @@ public class ExecuteCommandTool implements Tool {
             Pattern.compile("\\b(shutdown|reboot|halt|poweroff|init\\s+0)\\b")
     );
 
+    public ExecuteCommandTool() {
+        super(Args.class);
+    }
+
     @Override
     public String getName() {
         return "execute_command";
@@ -88,48 +92,36 @@ public class ExecuteCommandTool implements Tool {
     }
 
     /**
-     * 参数 Schema：command 必填，cwd / timeout_seconds 可选。
+     * 参数声明：command 必填，cwd / timeout_seconds 可选。
+     * 参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
      */
-    @Override
-    public JsonNode getParameters() {
-        ObjectNode params = JsonNodeFactory.instance.objectNode();
-        params.put("type", "object");
+    public record Args(
+            @Param(value = "The shell command to execute (may use pipes, redirects, chaining)", required = true)
+            String command,
+            @Param("Working directory. Defaults to the process current directory.") String cwd,
+            @Param("Timeout in seconds. Process is killed on expiry. Default 120.")
+            @JsonProperty("timeout_seconds") Integer timeoutSeconds) {
 
-        ObjectNode properties = JsonNodeFactory.instance.objectNode();
-
-        ObjectNode cmdProp = JsonNodeFactory.instance.objectNode();
-        cmdProp.put("type", "string");
-        cmdProp.put("description", "The shell command to execute (may use pipes, redirects, chaining)");
-        properties.set("command", cmdProp);
-
-        ObjectNode cwdProp = JsonNodeFactory.instance.objectNode();
-        cwdProp.put("type", "string");
-        cwdProp.put("description", "Working directory. Defaults to the process current directory.");
-        properties.set("cwd", cwdProp);
-
-        ObjectNode timeoutProp = JsonNodeFactory.instance.objectNode();
-        timeoutProp.put("type", "integer");
-        timeoutProp.put("description", "Timeout in seconds. Process is killed on expiry. Default 120.");
-        properties.set("timeout_seconds", timeoutProp);
-
-        params.set("properties", properties);
-        params.putArray("required").add("command");
-        return params;
+        public Args {
+            if (timeoutSeconds == null) {
+                timeoutSeconds = DEFAULT_TIMEOUT_SECONDS;
+            }
+        }
     }
 
     /**
      * 执行 shell 命令。
      *
-     * <p>执行流程：解析参数 → 黑名单校验 → 解析 cwd → 平台 shell 封装 →
+     * <p>执行流程：取参数 → 空命令校验 → 黑名单校验 → 解析 cwd → 平台 shell 封装 →
      * 启动进程 → 并发排空 stdout/stderr → 等待（超时强杀）→ 截断输出 → 格式化结果。</p>
      *
-     * @param arguments 含 {@code command}，可选 {@code cwd} / {@code timeout_seconds}
+     * @param args 已绑定的参数 record，timeout_seconds 已兜底默认值
      * @return {@code exit_code=N} + stdout + stderr（超时时附 timeout 提示，含已收集的部分输出）
      * @throws ToolExecutionException 命中黑名单、cwd 非法、启动失败时抛出
      */
     @Override
-    public String execute(JsonNode arguments) throws ToolExecutionException {
-        String command = arguments.get("command").asText();
+    protected String doExecute(Args args) throws ToolExecutionException {
+        String command = args.command();
         if (command.isBlank()) {
             throw new ToolExecutionException("command must not be empty");
         }
@@ -137,15 +129,10 @@ public class ExecuteCommandTool implements Tool {
         // 黑名单硬拦截
         checkDenylist(command);
 
-        String cwdStr = arguments.has("cwd") && !arguments.get("cwd").isNull()
-                ? arguments.get("cwd").asText() : null;
-        int timeoutSeconds = arguments.has("timeout_seconds") ? arguments.get("timeout_seconds").asInt()
-                : DEFAULT_TIMEOUT_SECONDS;
-
-        Path cwd = resolveCwd(cwdStr);
+        Path cwd = resolveCwd(args.cwd());
 
         List<String> shellCommand = buildShellCommand(command);
-        log.info("Executing command: cmd=[{}], cwd={}, timeout={}s", command, cwd, timeoutSeconds);
+        log.info("Executing command: cmd=[{}], cwd={}, timeout={}s", command, cwd, args.timeoutSeconds());
 
         Process process = startProcess(shellCommand, cwd);
 
@@ -157,16 +144,16 @@ public class ExecuteCommandTool implements Tool {
         stdoutThread.start();
         stderrThread.start();
 
-        boolean finished = waitFor(process, timeoutSeconds);
+        boolean finished = waitFor(process, args.timeoutSeconds());
 
         if (!finished) {
             // 超时：强杀进程，再 join 排空线程以回收已收集的部分输出
-            log.warn("Command timed out after {}s, killing: cmd=[{}]", timeoutSeconds, command);
+            log.warn("Command timed out after {}s, killing: cmd=[{}]", args.timeoutSeconds(), command);
             process.destroyForcibly();
             joinSilently(process);
             joinSilently(stdoutThread);
             joinSilently(stderrThread);
-            return formatTimeout(stdout.toString(), stderr.toString(), timeoutSeconds);
+            return formatTimeout(stdout.toString(), stderr.toString(), args.timeoutSeconds());
         }
 
         // 正常结束：先 join 排空线程，再读取输出。
@@ -203,7 +190,7 @@ public class ExecuteCommandTool implements Tool {
             return Paths.get(".").toAbsolutePath().normalize();
         }
         Path cwd = Paths.get(cwdStr);
-        if (!java.nio.file.Files.isDirectory(cwd)) {
+        if (!Files.isDirectory(cwd)) {
             throw new ToolExecutionException("cwd is not a directory: " + cwdStr);
         }
         return cwd.toAbsolutePath().normalize();

@@ -1,9 +1,8 @@
 package com.greensamcli.tools;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.greensamcli.agent.Tool;
+import com.fasterxml.jackson.annotation.JsonProperty;
+import com.greensamcli.agent.AbstractTool;
+import com.greensamcli.agent.Param;
 import com.greensamcli.agent.ToolExecutionException;
 import lombok.extern.slf4j.Slf4j;
 
@@ -29,7 +28,7 @@ import java.util.regex.PatternSyntaxException;
  * 自动构造参数 {@code {"pattern": "foo\\(\\)", "path": "src"}}。
  * 没有它，agent 只能靠 list_files 盲找，无法定位"谁调用了我 / 定义在哪"。</p>
  *
- * <p><b>三种输出模式</b>：</p>
+ * <p><b>三种输出模式</b>（{@link OutputMode}，wire 名 content / files_with_matches / count）：</p>
  * <ul>
  *   <li>{@code content}（默认）：返回 {@code 路径:行号:命中行}，适合定位具体位置</li>
  *   <li>{@code files_with_matches}：只返回命中文件的路径，适合"哪些文件涉及"</li>
@@ -45,7 +44,7 @@ import java.util.regex.PatternSyntaxException;
  * @since 2026-08-13
  */
 @Slf4j
-public class GrepTool implements Tool {
+public class GrepTool extends AbstractTool<GrepTool.Args> {
 
     /**
      * 遍历时跳过的目录名（构建产物、依赖、版本控制、IDE 配置等）。
@@ -64,9 +63,9 @@ public class GrepTool implements Tool {
     /** 单次扫描文件数上限，防止遍历超大型目录树耗时过久。 */
     private static final int MAX_FILES_SCANNED = 2000;
 
-    private static final String MODE_CONTENT = "content";
-    private static final String MODE_FILES = "files_with_matches";
-    private static final String MODE_COUNT = "count";
+    public GrepTool() {
+        super(Args.class);
+    }
 
     @Override
     public String getName() {
@@ -81,92 +80,74 @@ public class GrepTool implements Tool {
     }
 
     /**
-     * 参数 Schema：pattern 必填；path / include / output_mode / case_insensitive / max_results 可选。
+     * 输出模式枚举。wire 名（对模型的取值）通过 {@code @JsonProperty} 声明，
+     * 参数 Schema 会自动带出 enum 取值列表，非法取值在参数绑定期即报错。
      */
-    @Override
-    public JsonNode getParameters() {
-        ObjectNode params = JsonNodeFactory.instance.objectNode();
-        params.put("type", "object");
+    public enum OutputMode {
+        /** 逐行输出命中内容：路径:行号:文本 */
+        @JsonProperty("content")
+        CONTENT,
+        /** 仅输出命中文件路径 */
+        @JsonProperty("files_with_matches")
+        FILES_WITH_MATCHES,
+        /** 输出路径:命中次数 */
+        @JsonProperty("count")
+        COUNT
+    }
 
-        ObjectNode properties = JsonNodeFactory.instance.objectNode();
+    /**
+     * 参数声明：pattern 必填；path / include / output_mode / case_insensitive / max_results 可选。
+     * 参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
+     */
+    public record Args(
+            @Param(value = "Regular expression to search for", required = true) String pattern,
+            @Param("File or directory to search. Defaults to current directory.") String path,
+            @Param("Filename glob filter, e.g. *.java. Only matching files are searched.") String include,
+            @Param("Output mode: content | files_with_matches | count. Default content.")
+            @JsonProperty("output_mode") OutputMode outputMode,
+            @Param("Case-insensitive match. Default false.")
+            @JsonProperty("case_insensitive") Boolean caseInsensitive,
+            @Param("Max results to return (lines for content, files otherwise). Default 100.")
+            @JsonProperty("max_results") Integer maxResults) {
 
-        ObjectNode patternProp = JsonNodeFactory.instance.objectNode();
-        patternProp.put("type", "string");
-        patternProp.put("description", "Regular expression to search for");
-        properties.set("pattern", patternProp);
-
-        ObjectNode pathProp = JsonNodeFactory.instance.objectNode();
-        pathProp.put("type", "string");
-        pathProp.put("description", "File or directory to search. Defaults to current directory.");
-        properties.set("path", pathProp);
-
-        ObjectNode includeProp = JsonNodeFactory.instance.objectNode();
-        includeProp.put("type", "string");
-        includeProp.put("description", "Filename glob filter, e.g. *.java. Only matching files are searched.");
-        properties.set("include", includeProp);
-
-        ObjectNode modeProp = JsonNodeFactory.instance.objectNode();
-        modeProp.put("type", "string");
-        modeProp.put("description", "Output mode: content | files_with_matches | count. Default content.");
-        properties.set("output_mode", modeProp);
-
-        ObjectNode ciProp = JsonNodeFactory.instance.objectNode();
-        ciProp.put("type", "boolean");
-        ciProp.put("description", "Case-insensitive match. Default false.");
-        properties.set("case_insensitive", ciProp);
-
-        ObjectNode maxProp = JsonNodeFactory.instance.objectNode();
-        maxProp.put("type", "integer");
-        maxProp.put("description", "Max results to return (lines for content, files otherwise). Default 100.");
-        properties.set("max_results", maxProp);
-
-        params.set("properties", properties);
-        params.putArray("required").add("pattern");
-        return params;
+        public Args {
+            if (path == null) {
+                path = ".";
+            }
+            if (outputMode == null) {
+                outputMode = OutputMode.CONTENT;
+            }
+            if (caseInsensitive == null) {
+                caseInsensitive = false;
+            }
+            if (maxResults == null) {
+                maxResults = DEFAULT_MAX_RESULTS;
+            }
+        }
     }
 
     /**
      * 执行内容搜索。
      *
-     * @param arguments 含 {@code pattern}，可选 path / include / output_mode / case_insensitive / max_results
+     * @param args 已绑定的参数 record，可选参数已兜底默认值
      * @return 按 output_mode 格式化的搜索结果；无命中时返回明确的 no-matches 提示
      * @throws ToolExecutionException 正则非法、路径不存在、遍历失败时抛出
      */
     @Override
-    public String execute(JsonNode arguments) throws ToolExecutionException {
-        String patternStr = arguments.get("pattern").asText();
-        String pathStr = arguments.has("path") ? arguments.get("path").asText() : ".";
-        String include = arguments.has("include") && !arguments.get("include").isNull()
-                ? arguments.get("include").asText() : null;
-        String mode = arguments.has("output_mode") ? arguments.get("output_mode").asText() : MODE_CONTENT;
-        boolean caseInsensitive = arguments.has("case_insensitive") && arguments.get("case_insensitive").asBoolean();
-        int maxResults = arguments.has("max_results") ? arguments.get("max_results").asInt() : DEFAULT_MAX_RESULTS;
+    protected String doExecute(Args args) throws ToolExecutionException {
+        Pattern pattern = compilePattern(args.pattern(), args.caseInsensitive());
+        PathMatcher includeMatcher = args.include() != null
+                ? FileSystems.getDefault().getPathMatcher("glob:" + args.include()) : null;
 
-        validateMode(mode);
-
-        Pattern pattern = compilePattern(patternStr, caseInsensitive);
-        PathMatcher includeMatcher = include != null
-                ? FileSystems.getDefault().getPathMatcher("glob:" + include) : null;
-
-        Path root = Paths.get(pathStr);
+        Path root = Paths.get(args.path());
         if (!Files.exists(root)) {
-            throw new ToolExecutionException("Path not found: " + pathStr);
+            throw new ToolExecutionException("Path not found: " + args.path());
         }
 
         List<Path> targets = collectTargetFiles(root, includeMatcher);
 
-        SearchResult result = search(targets, pattern, mode, maxResults);
-        return formatResult(result, mode);
-    }
-
-    /**
-     * 校验 output_mode 取值合法。
-     */
-    private void validateMode(String mode) throws ToolExecutionException {
-        if (!MODE_CONTENT.equals(mode) && !MODE_FILES.equals(mode) && !MODE_COUNT.equals(mode)) {
-            throw new ToolExecutionException(
-                    "Invalid output_mode: " + mode + ". Use content | files_with_matches | count.");
-        }
+        SearchResult result = search(targets, pattern, args.outputMode(), args.maxResults());
+        return formatResult(result, args.outputMode());
     }
 
     /**
@@ -235,7 +216,7 @@ public class GrepTool implements Tool {
     /**
      * 在目标文件列表上执行搜索，按 mode 收集结果，受 maxResults 约束。
      */
-    private SearchResult search(List<Path> targets, Pattern pattern, String mode, int maxResults) {
+    private SearchResult search(List<Path> targets, Pattern pattern, OutputMode mode, int maxResults) {
         SearchResult result = new SearchResult(mode);
         for (Path file : targets) {
             if (result.isFull(maxResults)) {
@@ -250,7 +231,7 @@ public class GrepTool implements Tool {
     /**
      * 搜索单个文件：二进制（含 NUL）直接跳过；逐行匹配并按 mode 记录。
      */
-    private void searchOneFile(Path file, Pattern pattern, String mode, int maxResults, SearchResult result) {
+    private void searchOneFile(Path file, Pattern pattern, OutputMode mode, int maxResults, SearchResult result) {
         byte[] bytes;
         try {
             bytes = Files.readAllBytes(file);
@@ -273,15 +254,15 @@ public class GrepTool implements Tool {
             }
             if (pattern.matcher(lines[i]).find()) {
                 fileMatches++;
-                if (MODE_CONTENT.equals(mode)) {
+                if (mode == OutputMode.CONTENT) {
                     result.contentLines.add(file + ":" + (i + 1) + ":" + truncateLine(lines[i]));
                 }
             }
         }
         if (fileMatches > 0) {
-            if (MODE_FILES.equals(mode)) {
+            if (mode == OutputMode.FILES_WITH_MATCHES) {
                 result.matchedFiles.add(file.toString());
-            } else if (MODE_COUNT.equals(mode)) {
+            } else if (mode == OutputMode.COUNT) {
                 result.countLines.add(file + ":" + fileMatches);
             }
         }
@@ -311,13 +292,13 @@ public class GrepTool implements Tool {
     /**
      * 把搜索结果按 mode 格式化为文本。无命中时返回明确提示。
      */
-    private String formatResult(SearchResult result, String mode) {
+    private String formatResult(SearchResult result, OutputMode mode) {
         if (result.isEmpty()) {
             return "No matches found.";
         }
         StringBuilder sb = new StringBuilder();
-        List<String> lines = MODE_CONTENT.equals(mode) ? result.contentLines
-                : MODE_FILES.equals(mode) ? result.matchedFiles : result.countLines;
+        List<String> lines = mode == OutputMode.CONTENT ? result.contentLines
+                : mode == OutputMode.FILES_WITH_MATCHES ? result.matchedFiles : result.countLines;
         for (String line : lines) {
             sb.append(line).append("\n");
         }
@@ -331,13 +312,13 @@ public class GrepTool implements Tool {
      * 搜索过程中的可变结果容器，按 mode 区分收集的字段。
      */
     private static final class SearchResult {
-        final String mode;
+        final OutputMode mode;
         final List<String> contentLines = new ArrayList<>();
         final List<String> matchedFiles = new ArrayList<>();
         final List<String> countLines = new ArrayList<>();
         boolean truncated = false;
 
-        SearchResult(String mode) {
+        SearchResult(OutputMode mode) {
             this.mode = mode;
         }
 
@@ -349,8 +330,8 @@ public class GrepTool implements Tool {
          * 是否已达 maxResults 上限。content 模式按命中行计，files/count 模式按命中文件计。
          */
         boolean isFull(int maxResults) {
-            int size = MODE_CONTENT.equals(mode) ? contentLines.size()
-                    : MODE_FILES.equals(mode) ? matchedFiles.size() : countLines.size();
+            int size = mode == OutputMode.CONTENT ? contentLines.size()
+                    : mode == OutputMode.FILES_WITH_MATCHES ? matchedFiles.size() : countLines.size();
             return size >= maxResults;
         }
     }

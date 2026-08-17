@@ -10,6 +10,8 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -444,5 +446,89 @@ class ToolsTest {
         ExecuteCommandTool tool = new ExecuteCommandTool();
         assertThrows(ToolExecutionException.class,
                 () -> tool.execute(execArgs("echo hi", "/no/such/dir/xyz", null)));
+    }
+
+    // ==================== 参数 Schema 形状 ====================
+    // 锁定各工具对模型的 wire 契约（参数名 / required 顺序 / 枚举取值），
+    // 防止 record 迁移后的命名漂移（如 replace_all 误映射为 replaceAll）。
+
+    /**
+     * 按声明顺序提取 Schema 的 properties 参数名列表。
+     */
+    private List<String> propertyNames(JsonNode schema) {
+        List<String> names = new ArrayList<>();
+        schema.get("properties").fieldNames().forEachRemaining(names::add);
+        return names;
+    }
+
+    /**
+     * 按顺序提取 Schema 的 required 参数名列表。
+     */
+    private List<String> requiredNames(JsonNode schema) {
+        List<String> names = new ArrayList<>();
+        schema.get("required").forEach(node -> names.add(node.asText()));
+        return names;
+    }
+
+    @Test
+    void schema_readFileToolShape() {
+        JsonNode schema = new ReadFileTool().getParameters();
+
+        assertEquals(List.of("path"), propertyNames(schema));
+        assertEquals(List.of("path"), requiredNames(schema));
+    }
+
+    @Test
+    void schema_listFilesToolShape() {
+        JsonNode schema = new ListFilesTool().getParameters();
+
+        assertEquals(List.of("path"), propertyNames(schema));
+        assertEquals(List.of("path"), requiredNames(schema));
+    }
+
+    @Test
+    void schema_writeFileToolShape() {
+        JsonNode schema = new WriteFileTool().getParameters();
+
+        assertEquals(List.of("path", "content"), propertyNames(schema));
+        assertEquals(List.of("path", "content"), requiredNames(schema));
+    }
+
+    @Test
+    void schema_editFileToolShape() {
+        JsonNode schema = new EditFileTool().getParameters();
+
+        assertEquals(List.of("path", "old_string", "new_string", "replace_all"), propertyNames(schema));
+        assertEquals(List.of("path", "old_string", "new_string"), requiredNames(schema));
+        assertEquals("boolean", schema.get("properties").get("replace_all").get("type").asText());
+    }
+
+    @Test
+    void schema_globToolShape() {
+        JsonNode schema = new GlobTool().getParameters();
+
+        assertEquals(List.of("pattern", "path"), propertyNames(schema));
+        assertEquals(List.of("pattern"), requiredNames(schema));
+    }
+
+    @Test
+    void schema_grepToolShape() {
+        JsonNode schema = new GrepTool().getParameters();
+
+        assertEquals(List.of("pattern", "path", "include", "output_mode", "case_insensitive", "max_results"),
+                propertyNames(schema));
+        assertEquals(List.of("pattern"), requiredNames(schema));
+        assertEquals("string", schema.get("properties").get("output_mode").get("type").asText());
+        List<String> enumValues = new ArrayList<>();
+        schema.get("properties").get("output_mode").get("enum").forEach(node -> enumValues.add(node.asText()));
+        assertEquals(List.of("content", "files_with_matches", "count"), enumValues);
+    }
+
+    @Test
+    void schema_executeCommandToolShape() {
+        JsonNode schema = new ExecuteCommandTool().getParameters();
+
+        assertEquals(List.of("command", "cwd", "timeout_seconds"), propertyNames(schema));
+        assertEquals(List.of("command"), requiredNames(schema));
     }
 }

@@ -1,9 +1,7 @@
 package com.greensamcli.tools;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.greensamcli.agent.Tool;
+import com.greensamcli.agent.AbstractTool;
+import com.greensamcli.agent.Param;
 import com.greensamcli.agent.ToolExecutionException;
 import lombok.extern.slf4j.Slf4j;
 
@@ -34,7 +32,7 @@ import java.nio.file.Paths;
  * @since 2026-08-11
  */
 @Slf4j
-public class WriteFileTool implements Tool {
+public class WriteFileTool extends AbstractTool<WriteFileTool.Args> {
 
     /**
      * 单次写入字节数上限。
@@ -42,6 +40,10 @@ public class WriteFileTool implements Tool {
      * 5MB 对常规代码生成 / 文档撰写完全够用，超过即拒，避免磁盘灌满与误覆盖。
      */
     private static final int MAX_WRITE_FILE_BYTES = 5 * 1024 * 1024;
+
+    public WriteFileTool() {
+        super(Args.class);
+    }
 
     @Override
     public String getName() {
@@ -55,48 +57,35 @@ public class WriteFileTool implements Tool {
     }
 
     /**
-     * 返回参数的 JSON Schema，告诉 LLM 这个工具需要 "path" 和 "content" 两个参数。
-     * LLM 看到这个定义后就知道应该传什么参数。
+     * 参数声明：path / content 必填。参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
      */
-    @Override
-    public JsonNode getParameters() {
-        ObjectNode params = JsonNodeFactory.instance.objectNode();
-        params.put("type", "object");
+    public record Args(
+            @Param(value = "Absolute or relative path of the file to create or overwrite", required = true) String path,
+            @Param(value = "Text content to write (UTF-8). Use empty string to clear the file.", required = true)
+            String content) {
 
-        ObjectNode properties = JsonNodeFactory.instance.objectNode();
-
-        // "path" 参数：字符串类型，必填——目标文件路径（绝对或相对）
-        ObjectNode pathProp = JsonNodeFactory.instance.objectNode();
-        pathProp.put("type", "string");
-        pathProp.put("description", "Absolute or relative path of the file to create or overwrite");
-        properties.set("path", pathProp);
-
-        // "content" 参数：字符串类型，必填——待写入的文本内容
-        ObjectNode contentProp = JsonNodeFactory.instance.objectNode();
-        contentProp.put("type", "string");
-        contentProp.put("description", "Text content to write (UTF-8). Use empty string to clear the file.");
-        properties.set("content", contentProp);
-
-        params.set("properties", properties);
-
-        params.putArray("required").add("path").add("content");
-        return params;
+        public Args {
+            // content 缺失时容错为空串（支持清空文件场景）
+            if (content == null) {
+                content = "";
+            }
+        }
     }
 
     /**
      * 执行文件写入。
      *
-     * <p>执行流程：解析参数 → 目录冲突校验 → 内容大小校验 → 自动创建父目录 →
+     * <p>执行流程：取参数 → 目录冲突校验 → 内容大小校验 → 自动创建父目录 →
      * 写入文件（创建或截断覆盖）→ 记录变更日志。</p>
      *
-     * @param arguments LLM 构造的参数，包含 {@code path} 与 {@code content}
+     * @param args 已绑定的参数 record，content 已兜底为非 null
      * @return 写入结果描述：新建返回 {@code "Created <path> (<N> bytes)"}，
      *         覆盖返回 {@code "Overwrote <path> (<N> bytes, was <oldN> bytes)"}
      * @throws ToolExecutionException 目标路径是目录、内容超限或写入失败时抛出
      */
     @Override
-    public String execute(JsonNode arguments) throws ToolExecutionException {
-        String pathStr = arguments.get("path").asText();
+    protected String doExecute(Args args) throws ToolExecutionException {
+        String pathStr = args.path();
         Path path = Paths.get(pathStr);
 
         // 前置检查：目标路径若已是目录，禁止写入（避免误覆盖目录）
@@ -104,9 +93,7 @@ public class WriteFileTool implements Tool {
             throw new ToolExecutionException("Path is a directory: " + pathStr);
         }
 
-        // 读取内容，null 容错为空串（支持清空文件场景）
-        JsonNode contentNode = arguments.get("content");
-        String content = contentNode == null || contentNode.isNull() ? "" : contentNode.asText();
+        String content = args.content();
 
         // 大小校验：UTF-8 字节数超限即拒
         int contentBytes = content.getBytes(StandardCharsets.UTF_8).length;

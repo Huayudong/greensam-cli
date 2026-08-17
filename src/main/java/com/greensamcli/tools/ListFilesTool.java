@@ -1,9 +1,7 @@
 package com.greensamcli.tools;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.node.JsonNodeFactory;
-import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.greensamcli.agent.Tool;
+import com.greensamcli.agent.AbstractTool;
+import com.greensamcli.agent.Param;
 import com.greensamcli.agent.ToolExecutionException;
 
 import java.io.IOException;
@@ -26,7 +24,11 @@ import java.util.stream.Stream;
  * f  file2.java
  * </pre>
  */
-public class ListFilesTool implements Tool {
+public class ListFilesTool extends AbstractTool<ListFilesTool.Args> {
+
+    public ListFilesTool() {
+        super(Args.class);
+    }
 
     @Override
     public String getName() {
@@ -38,20 +40,11 @@ public class ListFilesTool implements Tool {
         return "List files and directories in a given path.";
     }
 
-    @Override
-    public JsonNode getParameters() {
-        ObjectNode params = JsonNodeFactory.instance.objectNode();
-        params.put("type", "object");
-
-        ObjectNode properties = JsonNodeFactory.instance.objectNode();
-        ObjectNode pathProp = JsonNodeFactory.instance.objectNode();
-        pathProp.put("type", "string");
-        pathProp.put("description", "Absolute or relative path to the directory to list");
-        properties.set("path", pathProp);
-
-        params.set("properties", properties);
-        params.putArray("required").add("path");
-        return params;
+    /**
+     * 参数声明：path 必填。参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
+     */
+    public record Args(
+            @Param(value = "Absolute or relative path to the directory to list", required = true) String path) {
     }
 
     /**
@@ -60,8 +53,8 @@ public class ListFilesTool implements Tool {
      * （Stream 持有底层文件系统资源，不关闭会导致资源泄漏）。
      */
     @Override
-    public String execute(JsonNode arguments) throws ToolExecutionException {
-        String pathStr = arguments.get("path").asText();
+    protected String doExecute(Args args) throws ToolExecutionException {
+        String pathStr = args.path();
         Path path = Paths.get(pathStr);
 
         if (!Files.exists(path)) {
