@@ -74,7 +74,7 @@ public class ToolRegistry {
     public String executeTool(String name, JsonNode arguments) throws ToolExecutionException {
         Tool tool = tools.get(name);
         if (tool == null) {
-            throw new ToolExecutionException("Unknown tool: " + name);
+            throw new ToolExecutionException("未知工具: " + name);
         }
         return tool.execute(arguments);
     }

@@ -49,7 +49,7 @@ class ToolsTest {
         JsonNode args = mapper.readTree("{\"path\":\"" + largeFile.toString().replace("\\", "\\\\") + "\"}");
 
         String result = tool.execute(args);
-        assertTrue(result.contains("truncated"));
+        assertTrue(result.contains("已截断"));
         assertTrue(result.length() < 11000);
     }
 
@@ -98,7 +98,7 @@ class ToolsTest {
         WriteFileTool tool = new WriteFileTool();
         String result = tool.execute(writeArgs(target, "Hello, World!"));
 
-        assertTrue(result.contains("Created"));
+        assertTrue(result.contains("已创建"));
         assertEquals("Hello, World!", Files.readString(target));
     }
 
@@ -110,8 +110,8 @@ class ToolsTest {
         WriteFileTool tool = new WriteFileTool();
         String result = tool.execute(writeArgs(target, "new content"));
 
-        assertTrue(result.contains("Overwrote"));
-        assertTrue(result.contains("was"));
+        assertTrue(result.contains("已覆盖"));
+        assertTrue(result.contains("原"));
         assertEquals("new content", Files.readString(target));
     }
 
@@ -173,7 +173,7 @@ class ToolsTest {
         EditFileTool tool = new EditFileTool();
         String result = tool.execute(editArgs(target, "beta", "BETA", false));
 
-        assertTrue(result.contains("replaced 1"));
+        assertTrue(result.contains("替换 1 处"));
         assertEquals("alpha BETA gamma", Files.readString(target));
     }
 
@@ -185,7 +185,7 @@ class ToolsTest {
         EditFileTool tool = new EditFileTool();
         String result = tool.execute(editArgs(target, "a", "b", true));
 
-        assertTrue(result.contains("replaced 3"));
+        assertTrue(result.contains("替换 3 处"));
         assertEquals("b b b", Files.readString(target));
     }
 
@@ -207,7 +207,7 @@ class ToolsTest {
         EditFileTool tool = new EditFileTool();
         ToolExecutionException ex = assertThrows(ToolExecutionException.class,
                 () -> tool.execute(editArgs(target, "x", "z", false)));
-        assertTrue(ex.getMessage().contains("not unique"));
+        assertTrue(ex.getMessage().contains("不唯一"));
     }
 
     @Test
@@ -325,7 +325,7 @@ class ToolsTest {
         String result = tool.execute(grepArgs("needle", tempDir.toString(), null,
                 "files_with_matches", false, null));
 
-        assertEquals("No matches found.", result);
+        assertEquals("未找到匹配内容。", result);
     }
 
     @Test
@@ -336,7 +336,7 @@ class ToolsTest {
         GrepTool tool = new GrepTool();
         String result = tool.execute(grepArgs("hit", file.toString(), null, "content", false, 2));
 
-        assertTrue(result.contains("truncated"));
+        assertTrue(result.contains("结果已截断"));
     }
 
     // ==================== GlobTool ====================
@@ -359,7 +359,7 @@ class ToolsTest {
         String result = tool.execute(globArgs("**/*.txt", tempDir.toString()));
 
         assertTrue(result.contains("deep.txt"));
-        assertTrue(result.contains("matches"));
+        assertTrue(result.contains("个匹配"));
     }
 
     @Test
@@ -380,7 +380,7 @@ class ToolsTest {
         GlobTool tool = new GlobTool();
         String result = tool.execute(globArgs("*.nonexistent", tempDir.toString()));
 
-        assertTrue(result.contains("No files matched"));
+        assertTrue(result.contains("没有匹配该模式的文件"));
     }
 
     @Test
@@ -393,7 +393,7 @@ class ToolsTest {
         String result = tool.execute(globArgs("**/*.txt", tempDir.toString()));
 
         assertFalse(result.contains("build.txt"));
-        assertTrue(result.contains("No files matched"));
+        assertTrue(result.contains("没有匹配该模式的文件"));
     }
 
     // ==================== ExecuteCommandTool ====================
@@ -431,7 +431,7 @@ class ToolsTest {
         ExecuteCommandTool tool = new ExecuteCommandTool();
         ToolExecutionException ex = assertThrows(ToolExecutionException.class,
                 () -> tool.execute(execArgs("rm -rf /", null, null)));
-        assertTrue(ex.getMessage().contains("denylist"));
+        assertTrue(ex.getMessage().contains("黑名单"));
     }
 
     @Test

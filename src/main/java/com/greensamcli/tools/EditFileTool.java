@@ -56,9 +56,9 @@ public class EditFileTool extends AbstractTool<EditFileTool.Args> {
 
     @Override
     public String getDescription() {
-        return "Edit a file by replacing an exact string (old_string -> new_string). "
-                + "old_string must be unique in the file unless replace_all is true; "
-                + "prefer this over write_file for targeted changes.";
+        return "通过精确字符串替换编辑文件（old_string → new_string，非正则）。"
+                + "默认要求 old_string 在文件中唯一命中，需批量替换时传 replace_all=true；"
+                + "局部修改优先用本工具，而非整体重写的 write_file。";
     }
 
     /**
@@ -66,12 +66,12 @@ public class EditFileTool extends AbstractTool<EditFileTool.Args> {
      * 参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
      */
     public record Args(
-            @Param(value = "Absolute or relative path of the file to edit", required = true) String path,
-            @Param(value = "The exact text to find. Must be unique unless replace_all is true.", required = true)
+            @Param(value = "要编辑的文件路径（绝对或相对路径）", required = true) String path,
+            @Param(value = "要查找的精确文本（非正则）。除非 replace_all=true，必须在文件中唯一", required = true)
             @JsonProperty("old_string") String oldString,
-            @Param(value = "The replacement text. Use empty string to delete the match.", required = true)
+            @Param(value = "替换后的文本，传空字符串可删除匹配内容", required = true)
             @JsonProperty("new_string") String newString,
-            @Param("If true, replace every occurrence. Default false.")
+            @Param("为 true 时替换所有出现位置，默认 false")
             @JsonProperty("replace_all") Boolean replaceAll) {
 
         public Args {
@@ -113,12 +113,12 @@ public class EditFileTool extends AbstractTool<EditFileTool.Args> {
         // 统计命中次数（字面量、非重叠）
         int occurrences = countOccurrences(content, oldString);
         if (occurrences == 0) {
-            throw new ToolExecutionException("old_string not found in: " + pathStr);
+            throw new ToolExecutionException("未在文件中找到 old_string: " + pathStr);
         }
         if (occurrences > 1 && !replaceAll) {
             throw new ToolExecutionException(
-                    "old_string is not unique (" + occurrences + " occurrences) in: " + pathStr
-                            + ". Provide more context or set replace_all=true.");
+                    "old_string 不唯一（出现 " + occurrences + " 次）: " + pathStr
+                            + "。请提供更多上下文，或设置 replace_all=true。");
         }
 
         // 替换前记录首处命中行号（按原始文件统计，1-based）
@@ -131,12 +131,12 @@ public class EditFileTool extends AbstractTool<EditFileTool.Args> {
 
         writeBack(path, updated);
 
-        log.info("Edited file: path={}, replacements={}, firstLine={}, replaceAll={}",
+        log.info("已编辑文件: path={}, replacements={}, firstLine={}, replaceAll={}",
                 path, replaceAll ? occurrences : 1, firstLine, replaceAll);
 
         int applied = replaceAll ? occurrences : 1;
-        return "Edited " + pathStr + " (replaced " + applied
-                + " occurrence(s), first match at line " + firstLine + ")";
+        return "已编辑 " + pathStr + "（替换 " + applied
+                + " 处，首处命中位于第 " + firstLine + " 行）";
     }
 
     /**
@@ -144,24 +144,24 @@ public class EditFileTool extends AbstractTool<EditFileTool.Args> {
      */
     private void validateEditRequest(String oldString, String newString, Path path) throws ToolExecutionException {
         if (oldString.isEmpty()) {
-            throw new ToolExecutionException("old_string must not be empty");
+            throw new ToolExecutionException("old_string 不能为空");
         }
         if (oldString.equals(newString)) {
-            throw new ToolExecutionException("old_string and new_string are identical; nothing to change");
+            throw new ToolExecutionException("old_string 与 new_string 相同，没有需要修改的内容");
         }
         if (!Files.exists(path)) {
-            throw new ToolExecutionException("File not found: " + path);
+            throw new ToolExecutionException("文件不存在: " + path);
         }
         if (Files.isDirectory(path)) {
-            throw new ToolExecutionException("Path is a directory: " + path);
+            throw new ToolExecutionException("目标路径是目录: " + path);
         }
         try {
             if (Files.size(path) > MAX_FILE_BYTES) {
                 throw new ToolExecutionException(
-                        "File too large to edit: " + Files.size(path) + " bytes, max " + MAX_FILE_BYTES);
+                        "文件过大无法编辑: " + Files.size(path) + " 字节，上限 " + MAX_FILE_BYTES + " 字节");
             }
         } catch (IOException e) {
-            throw new ToolExecutionException("Failed to stat file: " + e.getMessage(), e);
+            throw new ToolExecutionException("获取文件大小失败: " + e.getMessage(), e);
         }
     }
 
@@ -172,7 +172,7 @@ public class EditFileTool extends AbstractTool<EditFileTool.Args> {
         try {
             return Files.readString(path, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new ToolExecutionException("Failed to read file: " + e.getMessage(), e);
+            throw new ToolExecutionException("读取文件失败: " + e.getMessage(), e);
         }
     }
 
@@ -183,7 +183,7 @@ public class EditFileTool extends AbstractTool<EditFileTool.Args> {
         try {
             Files.writeString(path, updated, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new ToolExecutionException("Failed to write file: " + e.getMessage(), e);
+            throw new ToolExecutionException("写入文件失败: " + e.getMessage(), e);
         }
     }
 

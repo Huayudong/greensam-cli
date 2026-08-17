@@ -52,16 +52,15 @@ public class WriteFileTool extends AbstractTool<WriteFileTool.Args> {
 
     @Override
     public String getDescription() {
-        return "Create or overwrite a file with the given content. "
-                + "Supports absolute or relative paths. Max 5MB per write.";
+        return "创建或覆盖文件（整体写入给定内容）。支持绝对或相对路径，单次写入上限 5MB。";
     }
 
     /**
      * 参数声明：path / content 必填。参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
      */
     public record Args(
-            @Param(value = "Absolute or relative path of the file to create or overwrite", required = true) String path,
-            @Param(value = "Text content to write (UTF-8). Use empty string to clear the file.", required = true)
+            @Param(value = "要创建或覆盖的文件路径（绝对或相对路径）", required = true) String path,
+            @Param(value = "要写入的文本内容（UTF-8）。传入空字符串可清空文件", required = true)
             String content) {
 
         public Args {
@@ -79,8 +78,8 @@ public class WriteFileTool extends AbstractTool<WriteFileTool.Args> {
      * 写入文件（创建或截断覆盖）→ 记录变更日志。</p>
      *
      * @param args 已绑定的参数 record，content 已兜底为非 null
-     * @return 写入结果描述：新建返回 {@code "Created <path> (<N> bytes)"}，
-     *         覆盖返回 {@code "Overwrote <path> (<N> bytes, was <oldN> bytes)"}
+     * @return 写入结果描述：新建返回 {@code "已创建 <path>（<N> 字节）"}，
+     *         覆盖返回 {@code "已覆盖 <path>（<N> 字节，原 <oldN> 字节）"}
      * @throws ToolExecutionException 目标路径是目录、内容超限或写入失败时抛出
      */
     @Override
@@ -90,7 +89,7 @@ public class WriteFileTool extends AbstractTool<WriteFileTool.Args> {
 
         // 前置检查：目标路径若已是目录，禁止写入（避免误覆盖目录）
         if (Files.isDirectory(path)) {
-            throw new ToolExecutionException("Path is a directory: " + pathStr);
+            throw new ToolExecutionException("目标路径是目录: " + pathStr);
         }
 
         String content = args.content();
@@ -99,7 +98,7 @@ public class WriteFileTool extends AbstractTool<WriteFileTool.Args> {
         int contentBytes = content.getBytes(StandardCharsets.UTF_8).length;
         if (contentBytes > MAX_WRITE_FILE_BYTES) {
             throw new ToolExecutionException(
-                    "Content too large: " + contentBytes + " bytes, max " + MAX_WRITE_FILE_BYTES);
+                    "内容过大: " + contentBytes + " 字节，上限 " + MAX_WRITE_FILE_BYTES + " 字节");
         }
 
         // 写入前记录是否已存在，用于区分新建/覆盖，并在覆盖时保留旧字节数
@@ -114,19 +113,19 @@ public class WriteFileTool extends AbstractTool<WriteFileTool.Args> {
             }
             Files.writeString(path, content, StandardCharsets.UTF_8);
         } catch (IOException e) {
-            throw new ToolExecutionException("Failed to write file: " + e.getMessage(), e);
+            throw new ToolExecutionException("写入文件失败: " + e.getMessage(), e);
         }
 
         // 关键写操作留 INFO 日志：路径、操作类型、新旧字节数（AGENTS.md 5.4）
         if (existed) {
-            log.info("Overwrote file: path={}, newBytes={}, oldBytes={}", path, contentBytes, oldBytes);
+            log.info("已覆盖文件: path={}, newBytes={}, oldBytes={}", path, contentBytes, oldBytes);
         } else {
-            log.info("Created file: path={}, bytes={}", path, contentBytes);
+            log.info("已创建文件: path={}, bytes={}", path, contentBytes);
         }
 
         return existed
-                ? "Overwrote " + pathStr + " (" + contentBytes + " bytes, was " + oldBytes + " bytes)"
-                : "Created " + pathStr + " (" + contentBytes + " bytes)";
+                ? "已覆盖 " + pathStr + "（" + contentBytes + " 字节，原 " + oldBytes + " 字节）"
+                : "已创建 " + pathStr + "（" + contentBytes + " 字节）";
     }
 
     /**
@@ -136,7 +135,7 @@ public class WriteFileTool extends AbstractTool<WriteFileTool.Args> {
         try {
             return Files.size(path);
         } catch (IOException e) {
-            log.warn("Failed to read old file size, treating as 0: path={}, err={}", path, e.getMessage());
+            log.warn("读取旧文件大小失败，按 0 处理: path={}, err={}", path, e.getMessage());
             return 0L;
         }
     }

@@ -26,7 +26,7 @@ public class TerminalRenderer implements CliRenderer {
 
     @Override
     public void displaySystem(String text) {
-        System.out.println(GRAY + "[system] " + text + RESET);
+        System.out.println(GRAY + "[系统] " + text + RESET);
     }
 
     @Override
@@ -39,7 +39,7 @@ public class TerminalRenderer implements CliRenderer {
 
     @Override
     public void displayToolCall(String toolName, String arguments) {
-        System.out.println(YELLOW + "  [tool] " + toolName + "(" + arguments + ")" + RESET);
+        System.out.println(YELLOW + "  [工具] " + toolName + "(" + arguments + ")" + RESET);
     }
 
     @Override
@@ -49,11 +49,11 @@ public class TerminalRenderer implements CliRenderer {
                 ? result.substring(0, 200) + "..."
                 : result;
         // 将换行替换为 \n 字面量，让结果保持在一行内
-        System.out.println(GREEN + "  [result] " + toolName + ": " + truncated.replace("\n", "\\n") + RESET);
+        System.out.println(GREEN + "  [结果] " + toolName + ": " + truncated.replace("\n", "\\n") + RESET);
     }
 
     @Override
     public void displayError(String message) {
-        System.out.println(RED + "[error] " + message + RESET);
+        System.out.println(RED + "[错误] " + message + RESET);
     }
 }

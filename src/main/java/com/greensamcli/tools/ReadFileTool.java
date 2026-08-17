@@ -37,14 +37,14 @@ public class ReadFileTool extends AbstractTool<ReadFileTool.Args> {
 
     @Override
     public String getDescription() {
-        return "Read the contents of a file from the local filesystem.";
+        return "读取本地文件系统中的文件内容。超过 10000 字符时截断，二进制文件可能显示为乱码。";
     }
 
     /**
      * 参数声明：path 必填。参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
      */
     public record Args(
-            @Param(value = "Absolute or relative path to the file to read", required = true) String path) {
+            @Param(value = "要读取的文件路径（绝对或相对路径）", required = true) String path) {
     }
 
     /**
@@ -59,12 +59,12 @@ public class ReadFileTool extends AbstractTool<ReadFileTool.Args> {
 
         // 前置检查：文件是否存在
         if (!Files.exists(path)) {
-            throw new ToolExecutionException("File not found: " + pathStr);
+            throw new ToolExecutionException("文件不存在: " + pathStr);
         }
 
         // 前置检查：是否是普通文件（不是目录、符号链接等）
         if (!Files.isRegularFile(path)) {
-            throw new ToolExecutionException("Not a regular file: " + pathStr);
+            throw new ToolExecutionException("不是普通文件: " + pathStr);
         }
 
         try {
@@ -72,11 +72,11 @@ public class ReadFileTool extends AbstractTool<ReadFileTool.Args> {
             // 超长文件截断，防止消耗过多 token
             if (content.length() > MAX_CHARS) {
                 content = content.substring(0, MAX_CHARS)
-                        + "\n\n... [truncated at " + MAX_CHARS + " characters]";
+                        + "\n\n... [已截断至 " + MAX_CHARS + " 字符]";
             }
             return content;
         } catch (IOException e) {
-            throw new ToolExecutionException("Failed to read file: " + e.getMessage(), e);
+            throw new ToolExecutionException("读取文件失败: " + e.getMessage(), e);
         }
     }
 }

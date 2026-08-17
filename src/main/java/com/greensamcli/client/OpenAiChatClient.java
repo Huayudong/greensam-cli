@@ -62,7 +62,7 @@ public class OpenAiChatClient implements ChatClient {
         try {
             requestBody = objectMapper.writeValueAsString(request);
         } catch (Exception e) {
-            throw new ChatClientException("Failed to serialize request", e);
+            throw new ChatClientException("请求序列化失败", e);
         }
 
         log.debug("Sending request to {}/chat/completions", baseUrl);
@@ -70,7 +70,7 @@ public class OpenAiChatClient implements ChatClient {
         // 拼接完整的 API 端点 URL
         HttpUrl url = HttpUrl.parse(baseUrl);
         if (url == null) {
-            throw new ChatClientException("Invalid base URL: " + baseUrl);
+            throw new ChatClientException("非法的 base URL: " + baseUrl);
         }
         HttpUrl endpoint = url.newBuilder()
                 .addPathSegment("chat")
@@ -91,15 +91,15 @@ public class OpenAiChatClient implements ChatClient {
 
             // 处理 HTTP 错误（401 认证失败、429 限流、500 服务端错误等）
             if (!response.isSuccessful()) {
-                log.error("API error: {} - {}", response.code(), responseBody);
+                log.error("API 请求失败: {} - {}", response.code(), responseBody);
                 throw new ChatClientException(
-                        "API returned " + response.code() + ": " + responseBody);
+                        "API 返回 " + response.code() + ": " + responseBody);
             }
 
             // 将 JSON 响应反序列化为 ChatResponse 对象
             return objectMapper.readValue(responseBody, ChatResponse.class);
         } catch (IOException e) {
-            throw new ChatClientException("Request failed", e);
+            throw new ChatClientException("请求失败", e);
         }
     }
 

@@ -37,14 +37,14 @@ public class ListFilesTool extends AbstractTool<ListFilesTool.Args> {
 
     @Override
     public String getDescription() {
-        return "List files and directories in a given path.";
+        return "列出指定目录下的文件和子目录，每行以 d（目录）或 f（文件）开头标识类型。";
     }
 
     /**
      * 参数声明：path 必填。参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
      */
     public record Args(
-            @Param(value = "Absolute or relative path to the directory to list", required = true) String path) {
+            @Param(value = "要列出的目录路径（绝对或相对路径）", required = true) String path) {
     }
 
     /**
@@ -58,11 +58,11 @@ public class ListFilesTool extends AbstractTool<ListFilesTool.Args> {
         Path path = Paths.get(pathStr);
 
         if (!Files.exists(path)) {
-            throw new ToolExecutionException("Directory not found: " + pathStr);
+            throw new ToolExecutionException("目录不存在: " + pathStr);
         }
 
         if (!Files.isDirectory(path)) {
-            throw new ToolExecutionException("Not a directory: " + pathStr);
+            throw new ToolExecutionException("不是目录: " + pathStr);
         }
 
         StringBuilder sb = new StringBuilder();
@@ -73,7 +73,7 @@ public class ListFilesTool extends AbstractTool<ListFilesTool.Args> {
                 sb.append(type).append("  ").append(p.getFileName()).append("\n");
             });
         } catch (IOException e) {
-            throw new ToolExecutionException("Failed to list directory: " + e.getMessage(), e);
+            throw new ToolExecutionException("列出目录失败: " + e.getMessage(), e);
         }
 
         return sb.toString().trim();

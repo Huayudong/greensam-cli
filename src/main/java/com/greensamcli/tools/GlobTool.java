@@ -63,8 +63,8 @@ public class GlobTool extends AbstractTool<GlobTool.Args> {
 
     @Override
     public String getDescription() {
-        return "Find files by glob pattern (e.g. **/*.java, src/**/*.md). "
-                + "Use ** to match across directories. Returns matching file paths.";
+        return "按 glob 模式查找文件路径（如 **/*.java）。"
+                + "** 可跨目录层级匹配，返回匹配的文件路径列表。";
     }
 
     /**
@@ -72,8 +72,8 @@ public class GlobTool extends AbstractTool<GlobTool.Args> {
      * 参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
      */
     public record Args(
-            @Param(value = "Glob pattern, e.g. **/*.java or *.md", required = true) String pattern,
-            @Param("Directory to search in. Defaults to current directory.") String path) {
+            @Param(value = "glob 模式，如 **/*.java 或 *.md", required = true) String pattern,
+            @Param("要搜索的目录，默认当前目录") String path) {
 
         public Args {
             if (path == null) {
@@ -96,17 +96,17 @@ public class GlobTool extends AbstractTool<GlobTool.Args> {
 
         Path root = Paths.get(pathStr);
         if (!Files.exists(root)) {
-            throw new ToolExecutionException("Path not found: " + pathStr);
+            throw new ToolExecutionException("路径不存在: " + pathStr);
         }
         if (!Files.isDirectory(root)) {
-            throw new ToolExecutionException("Not a directory: " + pathStr);
+            throw new ToolExecutionException("不是目录: " + pathStr);
         }
 
         PathMatcher matcher = compileMatcher(patternStr);
 
         List<Path> matched = walkAndMatch(root, matcher);
         if (matched.isEmpty()) {
-            return "No files matched pattern: " + patternStr;
+            return "没有匹配该模式的文件: " + patternStr;
         }
 
         // 相对根路径，便于阅读；按路径排序
@@ -116,7 +116,7 @@ public class GlobTool extends AbstractTool<GlobTool.Args> {
         for (Path p : matched) {
             sb.append(root.relativize(p)).append("\n");
         }
-        sb.append("\n(").append(matched.size()).append(" matches)");
+        sb.append("\n(").append(matched.size()).append(" 个匹配)");
         return sb.toString().trim();
     }
 
@@ -127,7 +127,7 @@ public class GlobTool extends AbstractTool<GlobTool.Args> {
         try {
             return FileSystems.getDefault().getPathMatcher("glob:" + patternStr);
         } catch (IllegalArgumentException e) {
-            throw new ToolExecutionException("Invalid glob pattern: " + e.getMessage(), e);
+            throw new ToolExecutionException("glob 模式非法: " + e.getMessage(), e);
         }
     }
 
@@ -165,12 +165,12 @@ public class GlobTool extends AbstractTool<GlobTool.Args> {
 
                 @Override
                 public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                    log.warn("Failed to access file during glob, skipping: {}", file);
+                    log.warn("glob 遍历时无法访问文件，跳过: {}", file);
                     return FileVisitResult.CONTINUE;
                 }
             });
         } catch (IOException e) {
-            throw new ToolExecutionException("Failed to walk path: " + e.getMessage(), e);
+            throw new ToolExecutionException("遍历路径失败: " + e.getMessage(), e);
         }
         return matched;
     }

@@ -218,6 +218,6 @@ class AgentLoopTest {
         List<ChatMessage> history = loop.getConversationHistory();
         ChatMessage toolResult = history.get(3);
         assertEquals("tool", toolResult.getRole());
-        assertTrue(toolResult.getContent().contains("Error:"));
+        assertTrue(toolResult.getContent().contains("错误:"));
     }
 }

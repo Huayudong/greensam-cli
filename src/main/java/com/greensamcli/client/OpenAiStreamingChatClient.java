@@ -94,7 +94,7 @@ public class OpenAiStreamingChatClient implements StreamingChatClient {
         // 构建 API 端点 URL
         HttpUrl url = HttpUrl.parse(baseUrl);
         if (url == null) {
-            callback.onError(new IllegalArgumentException("Invalid base URL: " + baseUrl));
+            callback.onError(new IllegalArgumentException("非法的 base URL: " + baseUrl));
             return;
         }
         HttpUrl endpoint = url.newBuilder()
@@ -117,12 +117,12 @@ public class OpenAiStreamingChatClient implements StreamingChatClient {
             if (!response.isSuccessful()) {
                 String body = response.body() != null ? response.body().string() : "";
                 callback.onError(new ChatClientException(
-                        "API returned " + response.code() + ": " + body));
+                        "API 返回 " + response.code() + ": " + body));
                 return;
             }
 
             if (response.body() == null) {
-                callback.onError(new ChatClientException("Empty response body"));
+                callback.onError(new ChatClientException("响应体为空"));
                 return;
             }
 

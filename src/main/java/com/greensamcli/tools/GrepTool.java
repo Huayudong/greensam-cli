@@ -74,9 +74,9 @@ public class GrepTool extends AbstractTool<GrepTool.Args> {
 
     @Override
     public String getDescription() {
-        return "Search file contents with a regular expression. "
-                + "output_mode: content (path:line:text, default), files_with_matches, or count. "
-                + "Use include to filter by filename glob (e.g. *.java).";
+        return "用正则表达式搜索文件内容。"
+                + "output_mode 取值：content（路径:行号:文本，默认）、files_with_matches（仅命中文件）、count（路径:命中次数）。"
+                + "可用 include 按文件名 glob 过滤（如 *.java）。";
     }
 
     /**
@@ -100,14 +100,14 @@ public class GrepTool extends AbstractTool<GrepTool.Args> {
      * 参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
      */
     public record Args(
-            @Param(value = "Regular expression to search for", required = true) String pattern,
-            @Param("File or directory to search. Defaults to current directory.") String path,
-            @Param("Filename glob filter, e.g. *.java. Only matching files are searched.") String include,
-            @Param("Output mode: content | files_with_matches | count. Default content.")
+            @Param(value = "要搜索的正则表达式", required = true) String pattern,
+            @Param("要搜索的文件或目录，默认当前目录") String path,
+            @Param("文件名 glob 过滤，如 *.java，只搜索匹配的文件") String include,
+            @Param("输出模式：content | files_with_matches | count，默认 content")
             @JsonProperty("output_mode") OutputMode outputMode,
-            @Param("Case-insensitive match. Default false.")
+            @Param("是否忽略大小写，默认 false")
             @JsonProperty("case_insensitive") Boolean caseInsensitive,
-            @Param("Max results to return (lines for content, files otherwise). Default 100.")
+            @Param("返回结果上限（content 模式按命中行计，其余按文件计），默认 100")
             @JsonProperty("max_results") Integer maxResults) {
 
         public Args {
@@ -141,7 +141,7 @@ public class GrepTool extends AbstractTool<GrepTool.Args> {
 
         Path root = Paths.get(args.path());
         if (!Files.exists(root)) {
-            throw new ToolExecutionException("Path not found: " + args.path());
+            throw new ToolExecutionException("路径不存在: " + args.path());
         }
 
         List<Path> targets = collectTargetFiles(root, includeMatcher);
@@ -158,7 +158,7 @@ public class GrepTool extends AbstractTool<GrepTool.Args> {
             int flags = caseInsensitive ? Pattern.CASE_INSENSITIVE : 0;
             return Pattern.compile(patternStr, flags);
         } catch (PatternSyntaxException e) {
-            throw new ToolExecutionException("Invalid regex: " + e.getMessage(), e);
+            throw new ToolExecutionException("正则表达式非法: " + e.getMessage(), e);
         }
     }
 
@@ -203,12 +203,12 @@ public class GrepTool extends AbstractTool<GrepTool.Args> {
 
                 @Override
                 public FileVisitResult visitFileFailed(Path file, IOException exc) {
-                    log.warn("Failed to access file during grep, skipping: {}", file);
+                    log.warn("grep 遍历时无法访问文件，跳过: {}", file);
                     return FileVisitResult.CONTINUE;
                 }
             });
         } catch (IOException e) {
-            throw new ToolExecutionException("Failed to walk path: " + e.getMessage(), e);
+            throw new ToolExecutionException("遍历路径失败: " + e.getMessage(), e);
         }
         return files;
     }
@@ -236,7 +236,7 @@ public class GrepTool extends AbstractTool<GrepTool.Args> {
         try {
             bytes = Files.readAllBytes(file);
         } catch (IOException e) {
-            log.warn("Failed to read file during grep, skipping: {}", file);
+            log.warn("grep 读取文件失败，跳过: {}", file);
             return;
         }
         // 二进制文件跳过（含 NUL 字节的启发式判定）
@@ -286,7 +286,7 @@ public class GrepTool extends AbstractTool<GrepTool.Args> {
      * 单行输出截断，避免超长行（如压缩 JS）撑爆上下文。
      */
     private static String truncateLine(String line) {
-        return line.length() <= MAX_LINE_CHARS ? line : line.substring(0, MAX_LINE_CHARS) + " ... [truncated]";
+        return line.length() <= MAX_LINE_CHARS ? line : line.substring(0, MAX_LINE_CHARS) + " ... [已截断]";
     }
 
     /**
@@ -294,7 +294,7 @@ public class GrepTool extends AbstractTool<GrepTool.Args> {
      */
     private String formatResult(SearchResult result, OutputMode mode) {
         if (result.isEmpty()) {
-            return "No matches found.";
+            return "未找到匹配内容。";
         }
         StringBuilder sb = new StringBuilder();
         List<String> lines = mode == OutputMode.CONTENT ? result.contentLines
@@ -303,7 +303,7 @@ public class GrepTool extends AbstractTool<GrepTool.Args> {
             sb.append(line).append("\n");
         }
         if (result.truncated) {
-            sb.append("\n... [results truncated]\n");
+            sb.append("\n... [结果已截断]\n");
         }
         return sb.toString().trim();
     }

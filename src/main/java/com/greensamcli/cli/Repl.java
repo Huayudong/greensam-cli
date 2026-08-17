@@ -88,7 +88,7 @@ public class Repl {
             " \\   \\ .'           \\   \\  /  \\   \\  / '---'         `--'---' |  ,     .-./'---'                    \\   \\ .'   ---`-'  |  ,   /  \n" +
             "  `---`              `----'    `----'                          `--`---'                              `---`              ---`-'   \n" +
             "                                                                                                                                 \n"
-            + "\033[90m  A CLI Agent built from scratch with Java\033[0m\n";
+            + "\033[90m  基于 Java 从零构建的命令行 Agent\033[0m\n";
 
     /**
      * 启动 REPL 主循环，直到用户输入 /exit 或 Ctrl+D
@@ -102,7 +102,7 @@ public class Repl {
                     .dumb(true)   // IDEA 等非 TTY 环境下静默降级，不输出警告
                     .build();
         } catch (IOException e) {
-            log.error("Failed to initialize terminal", e);
+            log.error("终端初始化失败", e);
             return;
         }
 
@@ -113,7 +113,7 @@ public class Repl {
 
         System.out.println(BANNER);
         System.out.println();
-        renderer.displaySystem("Type /help for commands, /exit to quit.");
+        renderer.displaySystem("输入 /help 查看可用命令，/exit 退出。");
 
         // 工具调用监听器：将 AgentLoop 中的工具执行事件转发给渲染器
         ToolCallListener listener = new ToolCallListener() {
@@ -149,27 +149,27 @@ public class Repl {
 
                 // 内置命令处理
                 if (input.equals("/exit") || input.equals("/quit")) {
-                    renderer.displaySystem("Goodbye!");
+                    renderer.displaySystem("再见！");
                     break;
                 }
 
                 if (input.equals("/help")) {
-                    System.out.println("Commands:");
-                    System.out.println("  /help   - Show this help");
-                    System.out.println("  /clear  - Clear conversation history");
-                    System.out.println("  /exit   - Exit the program");
+                    System.out.println("可用命令：");
+                    System.out.println("  /help   - 显示本帮助");
+                    System.out.println("  /clear  - 清空对话历史");
+                    System.out.println("  /exit   - 退出程序");
                     continue;
                 }
 
                 if (input.equals("/clear")) {
                     agentLoop.clearHistory();
-                    renderer.displaySystem("Conversation cleared.");
+                    renderer.displaySystem("对话历史已清空。");
                     continue;
                 }
 
                 // 未知命令拦截（防止以 "/" 开头的普通文本被当成命令）
                 if (input.startsWith("/")) {
-                    renderer.displayError("Unknown command: " + input);
+                    renderer.displayError("未知命令：" + input);
                     continue;
                 }
 

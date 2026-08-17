@@ -215,16 +215,16 @@ public class AgentLoop {
                 latch.await();
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
-                throw new AgentLoopException("Interrupted during streaming");
+                throw new AgentLoopException("流式传输被中断");
             }
 
             if (error[0] != null) {
-                throw new AgentLoopException("Streaming error: " + error[0].getMessage());
+                throw new AgentLoopException("流式传输失败: " + error[0].getMessage());
             }
 
             ChatMessage assistantMessage = finalMessage[0];
             if (assistantMessage == null) {
-                throw new AgentLoopException("No assistant message in streaming response");
+                throw new AgentLoopException("流式响应中缺少 assistant 消息");
             }
 
             // --- 以下逻辑与同步版本 executeLoop 完全一致 ---
@@ -243,7 +243,7 @@ public class AgentLoop {
             // 继续下一次循环，带着工具结果重新发送给 LLM
         }
 
-        throw new AgentLoopException("Max iterations (" + MAX_ITERATIONS + ") exceeded");
+        throw new AgentLoopException("已达到最大循环次数（" + MAX_ITERATIONS + "），终止执行");
     }
 
     /**
@@ -261,7 +261,7 @@ public class AgentLoop {
 
             ChatMessage assistantMessage = response.getAssistantMessage();
             if (assistantMessage == null) {
-                throw new AgentLoopException("No assistant message in response");
+                throw new AgentLoopException("响应中缺少 assistant 消息");
             }
 
             // ② 判断：LLM 是直接回复文本，还是请求调用工具？
@@ -280,7 +280,7 @@ public class AgentLoop {
             // ⑤ 回到循环顶部，带着工具结果重新发送给 LLM
         }
 
-        throw new AgentLoopException("Max iterations (" + MAX_ITERATIONS + ") exceeded");
+        throw new AgentLoopException("已达到最大循环次数（" + MAX_ITERATIONS + "），终止执行");
     }
 
     /**
@@ -319,17 +319,17 @@ public class AgentLoop {
                 );
             } catch (Exception e) {
                 // 工具执行失败：不终止循环，将错误信息回传给 LLM
-                String errorMsg = "Tool execution failed: " + e.getMessage();
+                String errorMsg = "工具执行失败: " + e.getMessage();
                 log.error(errorMsg, e);
 
                 if (listener != null) {
                     listener.onToolCallFailed(toolName, errorMsg);
                 }
 
-                // 即使失败也要用 tool_result 消息回复（带 Error 前缀），
+                // 即使失败也要用 tool_result 消息回复（带错误前缀），
                 // 否则 LLM 会因为缺少 tool_call_id 对应的结果而报错
                 conversationHistory.add(
-                        ChatMessage.toolResult(toolCall.getId(), toolName, "Error: " + errorMsg)
+                        ChatMessage.toolResult(toolCall.getId(), toolName, "错误: " + errorMsg)
                 );
             }
         }

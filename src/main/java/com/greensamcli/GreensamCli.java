@@ -105,11 +105,11 @@ public class GreensamCli {
 
         } catch (IllegalStateException e) {
             // 配置错误（缺少 API Key 等）
-            log.error("Configuration error: {}", e.getMessage());
-            log.error("Please set the OPENAI_API_KEY environment variable or create a .env file.");
+            log.error("配置错误：{}", e.getMessage());
+            log.error("请设置环境变量 OPENAI_API_KEY，或在项目根目录创建 .env 文件。");
             System.exit(1);
         } catch (Exception e) {
-            log.error("Fatal error", e);
+            log.error("启动失败", e);
             System.exit(1);
         }
     }

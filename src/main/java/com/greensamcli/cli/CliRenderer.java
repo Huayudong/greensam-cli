@@ -25,7 +25,7 @@ public interface CliRenderer {
     void displayAssistant(String text);
 
     /**
-     * 显示工具调用信息（黄色，如 "[tool] read_file({"path":"/tmp/test"})"）
+     * 显示工具调用信息（黄色，如 "[工具] read_file({"path":"/tmp/test"})"）
      */
     void displayToolCall(String toolName, String arguments);
 

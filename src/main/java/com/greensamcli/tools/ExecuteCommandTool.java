@@ -87,8 +87,9 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
 
     @Override
     public String getDescription() {
-        return "Execute a shell command and return its stdout, stderr and exit code. "
-                + "Runs via cmd /c on Windows, sh -c on Unix. Catastrophic commands are blocked.";
+        return "执行 shell 命令，返回 stdout、stderr 和退出码。"
+                + "Windows 经 cmd /c、类 Unix 经 sh -c 执行，支持管道和重定向。"
+                + "灾难性命令（格式化磁盘、递归删根目录等）会被拦截。";
     }
 
     /**
@@ -96,10 +97,10 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
      * 参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
      */
     public record Args(
-            @Param(value = "The shell command to execute (may use pipes, redirects, chaining)", required = true)
+            @Param(value = "要执行的 shell 命令（可使用管道、重定向、链式命令）", required = true)
             String command,
-            @Param("Working directory. Defaults to the process current directory.") String cwd,
-            @Param("Timeout in seconds. Process is killed on expiry. Default 120.")
+            @Param("工作目录，默认为进程当前目录") String cwd,
+            @Param("超时秒数，超时强杀进程，默认 120")
             @JsonProperty("timeout_seconds") Integer timeoutSeconds) {
 
         public Args {
@@ -123,7 +124,7 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
     protected String doExecute(Args args) throws ToolExecutionException {
         String command = args.command();
         if (command.isBlank()) {
-            throw new ToolExecutionException("command must not be empty");
+            throw new ToolExecutionException("command 不能为空");
         }
 
         // 黑名单硬拦截
@@ -132,7 +133,7 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
         Path cwd = resolveCwd(args.cwd());
 
         List<String> shellCommand = buildShellCommand(command);
-        log.info("Executing command: cmd=[{}], cwd={}, timeout={}s", command, cwd, args.timeoutSeconds());
+        log.info("执行命令: cmd=[{}], cwd={}, timeout={}s", command, cwd, args.timeoutSeconds());
 
         Process process = startProcess(shellCommand, cwd);
 
@@ -148,7 +149,7 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
 
         if (!finished) {
             // 超时：强杀进程，再 join 排空线程以回收已收集的部分输出
-            log.warn("Command timed out after {}s, killing: cmd=[{}]", args.timeoutSeconds(), command);
+            log.warn("命令超时（{}s），强制终止: cmd=[{}]", args.timeoutSeconds(), command);
             process.destroyForcibly();
             joinSilently(process);
             joinSilently(stdoutThread);
@@ -164,7 +165,7 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
         int exitCode = process.exitValue();
         String outText = stdout.toString();
         String errText = stderr.toString();
-        log.info("Command finished: exitCode={}, stdoutBytes={}, stderrBytes={}",
+        log.info("命令结束: exitCode={}, stdoutChars={}, stderrChars={}",
                 exitCode, outText.length(), errText.length());
 
         return formatNormal(exitCode, outText, errText);
@@ -177,7 +178,7 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
         for (Pattern p : DENYLIST) {
             if (p.matcher(command).find()) {
                 throw new ToolExecutionException(
-                        "Blocked by safety denylist (matches: " + p.pattern() + "): " + command);
+                        "命令已被安全黑名单拦截（命中规则: " + p.pattern() + "）: " + command);
             }
         }
     }
@@ -191,7 +192,7 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
         }
         Path cwd = Paths.get(cwdStr);
         if (!Files.isDirectory(cwd)) {
-            throw new ToolExecutionException("cwd is not a directory: " + cwdStr);
+            throw new ToolExecutionException("cwd 不是目录: " + cwdStr);
         }
         return cwd.toAbsolutePath().normalize();
     }
@@ -216,7 +217,7 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
                     .redirectErrorStream(false)
                     .start();
         } catch (IOException e) {
-            throw new ToolExecutionException("Failed to start command: " + e.getMessage(), e);
+            throw new ToolExecutionException("启动命令失败: " + e.getMessage(), e);
         }
     }
 
@@ -279,7 +280,7 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
      * 格式化超时结果：标注被杀，附带已收集的部分输出。
      */
     private String formatTimeout(String stdout, String stderr, int timeoutSeconds) {
-        return "exit_code=-1 (timed out after " + timeoutSeconds + "s, killed)"
+        return "exit_code=-1（超时 " + timeoutSeconds + "s 后被强制终止）"
                 + "\n--- stdout ---\n" + truncate(stdout)
                 + (stderr.isBlank() ? "" : "\n--- stderr ---\n" + truncate(stderr));
     }
@@ -293,7 +294,7 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
         }
         int half = MAX_OUTPUT_CHARS / 2;
         return output.substring(0, half)
-                + "\n... [truncated " + (output.length() - MAX_OUTPUT_CHARS) + " chars] ...\n"
+                + "\n... [已截断 " + (output.length() - MAX_OUTPUT_CHARS) + " 字符] ...\n"
                 + output.substring(output.length() - half);
     }
 
@@ -308,7 +309,7 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
         }
 
         void setError(String message) {
-            sb.append("[stream read error: ").append(message).append("]");
+            sb.append("[流读取错误: ").append(message).append("]");
         }
 
         @Override

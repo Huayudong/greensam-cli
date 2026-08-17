@@ -47,7 +47,8 @@ public class AppConfig {
         this.baseUrl = getEnv("OPENAI_BASE_URL", "https://api.openai.com/v1");
         this.model = getEnv("GREENSAM_MODEL", "gpt-4o");
         this.systemPrompt = getEnv("GREENSAM_SYSTEM_PROMPT",
-                "You are a helpful CLI assistant with access to file tools. Be concise and helpful.");
+                "你是一个运行在终端里的智能助手，可以读写本地文件、搜索代码、执行命令。"
+                        + "请始终使用简体中文思考和回复，回答简洁、准确、可操作。");
         this.streaming = !"false".equalsIgnoreCase(resolveEnv("GREENSAM_STREAMING"));
     }
 
@@ -69,8 +70,8 @@ public class AppConfig {
         String value = resolveEnv(name);
         if (value == null || value.isBlank()) {
             throw new IllegalStateException(
-                    "Required environment variable not set: " + name
-                            + ". Set it in system env or create a .env file in the project root.");
+                    "缺少必需的环境变量: " + name
+                            + ". 请在系统环境变量中设置，或在项目根目录创建 .env 文件。");
         }
         return value.trim();
     }
