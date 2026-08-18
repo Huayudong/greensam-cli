@@ -147,33 +147,16 @@ public class Repl {
 
                 String input = line.trim();
 
-                // 内置命令处理
-                if (input.equals("/exit") || input.equals("/quit")) {
-                    renderer.displaySystem("再见！");
+                // 内置命令处理（/help、/clear、/exit 等）
+                BuiltinCommandResult result = handleBuiltinCommand(input, terminal);
+                if (result == BuiltinCommandResult.EXIT) {
                     break;
                 }
-
-                if (input.equals("/help")) {
-                    System.out.println("可用命令：");
-                    System.out.println("  /help   - 显示本帮助");
-                    System.out.println("  /clear  - 清空对话历史");
-                    System.out.println("  /exit   - 退出程序");
+                if (result == BuiltinCommandResult.HANDLED) {
                     continue;
                 }
 
-                if (input.equals("/clear")) {
-                    agentLoop.clearHistory();
-                    renderer.displaySystem("对话历史已清空。");
-                    continue;
-                }
-
-                // 未知命令拦截（防止以 "/" 开头的普通文本被当成命令）
-                if (input.startsWith("/")) {
-                    renderer.displayError("未知命令：" + input);
-                    continue;
-                }
-
-                // 根据配置选择同步或流式模式
+                // 普通输入：根据配置选择同步或流式模式
                 if (useStreaming) {
                     runStreaming(input, listener, terminal);
                 } else {
@@ -196,6 +179,79 @@ public class Repl {
         } catch (IOException e) {
             // 忽略关闭时的异常
         }
+    }
+
+    /**
+     * 内置命令处理结果。
+     */
+    enum BuiltinCommandResult {
+        /** 非内置命令，应作为普通输入交给 Agent 处理 */
+        NOT_A_COMMAND,
+        /** 命令已处理，继续读取下一行输入 */
+        HANDLED,
+        /** 退出程序 */
+        EXIT
+    }
+
+    /**
+     * 处理内置命令（/exit、/help、/clear）。
+     *
+     * <p>命令按首个单词匹配，命令词之后的参数被忽略
+     * （如「/clear 现在」等价于「/clear」），避免带参数的输入落入未知命令分支；
+     * 其余以 "/" 开头的输入视为未知命令拦截，不送给模型。</p>
+     *
+     * @param input    用户输入（已去除首尾空白，非空）
+     * @param terminal 当前终端，/clear 时用于输出清屏序列
+     * @return 处理结果：非命令 / 已处理 / 退出
+     */
+    BuiltinCommandResult handleBuiltinCommand(String input, Terminal terminal) {
+        String command = input.split("\\s+", 2)[0];
+
+        if (command.equals("/exit") || command.equals("/quit")) {
+            renderer.displaySystem("再见！");
+            return BuiltinCommandResult.EXIT;
+        }
+
+        if (command.equals("/help")) {
+            System.out.println("可用命令：");
+            System.out.println("  /help   - 显示本帮助");
+            System.out.println("  /clear  - 清空对话历史并清屏");
+            System.out.println("  /exit   - 退出程序");
+            return BuiltinCommandResult.HANDLED;
+        }
+
+        if (command.equals("/clear")) {
+            clearScreen(terminal);
+            agentLoop.clearHistory();
+            renderer.displaySystem("对话历史已清空。");
+            return BuiltinCommandResult.HANDLED;
+        }
+
+        // 未知命令拦截（防止以 "/" 开头的普通文本被当成命令送给模型）
+        if (command.startsWith("/")) {
+            renderer.displayError("未知命令：" + command);
+            return BuiltinCommandResult.HANDLED;
+        }
+
+        return BuiltinCommandResult.NOT_A_COMMAND;
+    }
+
+    /**
+     * 清空终端屏幕。
+     *
+     * <p>统一通过 {@link Terminal#writer()} 输出 ANSI 清屏序列（清屏 + 光标归位），
+     * 不直接写 System.out：JLine 真终端（jansi provider）的 writer 会把 ANSI
+     * 翻译为 Windows 原生控制台操作，经典 conhost 上同样生效；
+     * dumb 终端下 writer 即 System.out，由控制台自行解释 ANSI。
+     * 包级可见便于测试中覆写为空实现，避免触碰真实终端。</p>
+     *
+     * @param terminal 当前终端
+     */
+    void clearScreen(Terminal terminal) {
+        log.info("执行 /clear 清屏，当前终端类型：{}", terminal.getType());
+        terminal.writer().print("\033[2J\033[H");
+        terminal.writer().flush();
+        terminal.flush();
     }
 
     /**
