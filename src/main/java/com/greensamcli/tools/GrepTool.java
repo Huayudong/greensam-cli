@@ -54,13 +54,21 @@ public class GrepTool extends AbstractTool<GrepTool.Args> {
             ".git", ".svn", ".hg", "target", "build", "out", "node_modules", ".idea", ".gradle", "dist"
     );
 
-    /** 单文件大小上限（字节）：超过则跳过，避免把大日志 / 产物整体读入。 */
+    /**
+     * 单文件大小上限（字节）：超过则跳过，避免把大日志 / 产物整体读入。
+     */
     private static final long MAX_FILE_BYTES = 5L * 1024 * 1024;
-    /** 默认最大命中条数。 */
+    /**
+     * 默认最大命中条数。
+     */
     private static final int DEFAULT_MAX_RESULTS = 100;
-    /** 单行输出截断长度（字符）。 */
+    /**
+     * 单行输出截断长度（字符）。
+     */
     private static final int MAX_LINE_CHARS = 500;
-    /** 单次扫描文件数上限，防止遍历超大型目录树耗时过久。 */
+    /**
+     * 单次扫描文件数上限，防止遍历超大型目录树耗时过久。
+     */
     private static final int MAX_FILES_SCANNED = 2000;
 
     public GrepTool() {
@@ -84,13 +92,19 @@ public class GrepTool extends AbstractTool<GrepTool.Args> {
      * 参数 Schema 会自动带出 enum 取值列表，非法取值在参数绑定期即报错。
      */
     public enum OutputMode {
-        /** 逐行输出命中内容：路径:行号:文本 */
+        /**
+         * 逐行输出命中内容：路径:行号:文本
+         */
         @JsonProperty("content")
         CONTENT,
-        /** 仅输出命中文件路径 */
+        /**
+         * 仅输出命中文件路径
+         */
         @JsonProperty("files_with_matches")
         FILES_WITH_MATCHES,
-        /** 输出路径:命中次数 */
+        /**
+         * 输出路径:命中次数
+         */
         @JsonProperty("count")
         COUNT
     }
@@ -103,12 +117,9 @@ public class GrepTool extends AbstractTool<GrepTool.Args> {
             @Param(value = "要搜索的正则表达式", required = true) String pattern,
             @Param("要搜索的文件或目录，默认当前目录") String path,
             @Param("文件名 glob 过滤，如 *.java，只搜索匹配的文件") String include,
-            @Param("输出模式：content | files_with_matches | count，默认 content")
-            @JsonProperty("output_mode") OutputMode outputMode,
-            @Param("是否忽略大小写，默认 false")
-            @JsonProperty("case_insensitive") Boolean caseInsensitive,
-            @Param("返回结果上限（content 模式按命中行计，其余按文件计），默认 100")
-            @JsonProperty("max_results") Integer maxResults) {
+            @Param("输出模式：content | files_with_matches | count，默认 content") @JsonProperty("output_mode") OutputMode outputMode,
+            @Param("是否忽略大小写，默认 false") @JsonProperty("case_insensitive") Boolean caseInsensitive,
+            @Param("返回结果上限（content 模式按命中行计，其余按文件计），默认 100") @JsonProperty("max_results") Integer maxResults) {
 
         public Args {
             if (path == null) {

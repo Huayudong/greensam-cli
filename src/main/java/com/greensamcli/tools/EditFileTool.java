@@ -67,12 +67,9 @@ public class EditFileTool extends AbstractTool<EditFileTool.Args> {
      */
     public record Args(
             @Param(value = "要编辑的文件路径（绝对或相对路径）", required = true) String path,
-            @Param(value = "要查找的精确文本（非正则）。除非 replace_all=true，必须在文件中唯一", required = true)
-            @JsonProperty("old_string") String oldString,
-            @Param(value = "替换后的文本，传空字符串可删除匹配内容", required = true)
-            @JsonProperty("new_string") String newString,
-            @Param("为 true 时替换所有出现位置，默认 false")
-            @JsonProperty("replace_all") Boolean replaceAll) {
+            @Param(value = "要查找的精确文本（非正则）。除非 replace_all=true，必须在文件中唯一", required = true) @JsonProperty("old_string") String oldString,
+            @Param(value = "替换后的文本，传空字符串可删除匹配内容", required = true) @JsonProperty("new_string") String newString,
+            @Param("为 true 时替换所有出现位置，默认 false") @JsonProperty("replace_all") Boolean replaceAll) {
 
         public Args {
             // new_string 允许缺失（删除场景），容错为空串；replace_all 缺省为 false

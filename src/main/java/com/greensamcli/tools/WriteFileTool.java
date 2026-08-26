@@ -60,8 +60,7 @@ public class WriteFileTool extends AbstractTool<WriteFileTool.Args> {
      */
     public record Args(
             @Param(value = "要创建或覆盖的文件路径（绝对或相对路径）", required = true) String path,
-            @Param(value = "要写入的文本内容（UTF-8）。传入空字符串可清空文件", required = true)
-            String content) {
+            @Param(value = "要写入的文本内容（UTF-8）。传入空字符串可清空文件", required = true) String content) {
 
         public Args {
             // content 缺失时容错为空串（支持清空文件场景）

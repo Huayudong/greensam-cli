@@ -44,9 +44,13 @@ import java.util.regex.Pattern;
 @Slf4j
 public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
 
-    /** 默认超时秒数。 */
+    /**
+     * 默认超时秒数。
+     */
     private static final int DEFAULT_TIMEOUT_SECONDS = 120;
-    /** 单路输出（stdout / stderr）的字符上限，超出保留头尾各一半。 */
+    /**
+     * 单路输出（stdout / stderr）的字符上限，超出保留头尾各一半。
+     */
     private static final int MAX_OUTPUT_CHARS = 30000;
 
     /**
@@ -97,11 +101,9 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
      * 参数 Schema 由 {@link AbstractTool} 依据此 record 自动生成。
      */
     public record Args(
-            @Param(value = "要执行的 shell 命令（可使用管道、重定向、链式命令）", required = true)
-            String command,
+            @Param(value = "要执行的 shell 命令（可使用管道、重定向、链式命令）", required = true) String command,
             @Param("工作目录，默认为进程当前目录") String cwd,
-            @Param("超时秒数，超时强杀进程，默认 120")
-            @JsonProperty("timeout_seconds") Integer timeoutSeconds) {
+            @Param("超时秒数，超时强杀进程，默认 120") @JsonProperty("timeout_seconds") Integer timeoutSeconds) {
 
         public Args {
             if (timeoutSeconds == null) {
