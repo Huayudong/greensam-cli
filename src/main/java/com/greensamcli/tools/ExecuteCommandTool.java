@@ -31,8 +31,9 @@ import java.util.regex.Pattern;
  * 的安全哲学一致。黑名单仅兜底最危险的操作，并非完备的访问控制；交互式审批
  * 留作后续「权限系统」任务实现。</p>
  *
- * <p><b>平台封装</b>：Windows 经 {@code cmd /c}、类 Unix 经 {@code sh -c} 执行，
- * 以支持管道 / 重定向 / 链式命令等 shell 特性。</p>
+ * <p><b>平台封装</b>：Windows 经两层 {@code cmd /c} 封装（外层先 {@code chcp 65001} 切至
+ * UTF-8 代码页，内层执行用户命令，保证中文输出可按 UTF-8 解码）、类 Unix 经 {@code sh -c}
+ * 执行，以支持管道 / 重定向 / 链式命令等 shell 特性。</p>
  *
  * <p><b>护栏</b>：超时强杀进程（默认 {@value #DEFAULT_TIMEOUT_SECONDS}s）、
  * stdout/stderr 各截断到 {@value #MAX_OUTPUT_CHARS} 字符（保留头尾），
@@ -52,6 +53,14 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
      * 单路输出（stdout / stderr）的字符上限，超出保留头尾各一半。
      */
     private static final int MAX_OUTPUT_CHARS = 30000;
+    /**
+     * Windows 命令模板：外层 cmd 先切到 UTF-8 代码页，再起新 cmd 执行用户命令。
+     * <p>cmd 内建命令（dir/echo 等）的输出编码在进程启动时即已确定（中文系统默认 936/GBK），
+     * 同一实例内 {@code chcp} 对后续内建命令无效；必须先 {@code chcp 65001} 再新起一层 cmd，
+     * 内建命令输出才能按 UTF-8 解码。外置程序在 chcp 之后启动，同样遵循 UTF-8
+     * （git 等本就输出 UTF-8，不受影响）。</p>
+     */
+    private static final String WINDOWS_UTF8_COMMAND_TEMPLATE = "chcp 65001 >nul & cmd /c \"%s\"";
 
     /**
      * 危险命令黑名单（正则，对原始命令串 find 匹配）。
@@ -93,6 +102,7 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
     public String getDescription() {
         return "执行 shell 命令，返回 stdout、stderr 和退出码。"
                 + "Windows 经 cmd /c、类 Unix 经 sh -c 执行，支持管道和重定向。"
+                + "Windows 环境请直接使用 cmd 语法（dir/del/type 等），不要用 ls/rm/cat 等类 Unix 命令。"
                 + "灾难性命令（格式化磁盘、递归删根目录等）会被拦截。";
     }
 
@@ -200,12 +210,13 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
     }
 
     /**
-     * 按平台选择 shell 封装：Windows 用 cmd /c，其余用 sh -c。
+     * 按平台选择 shell 封装：Windows 用两层 cmd（外层切 UTF-8 代码页、内层执行用户命令，
+     * 保证中文输出可解码），其余用 sh -c。
      */
     private List<String> buildShellCommand(String command) {
         boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
         return windows
-                ? List.of("cmd", "/c", command)
+                ? List.of("cmd", "/c", String.format(WINDOWS_UTF8_COMMAND_TEMPLATE, command))
                 : List.of("sh", "-c", command);
     }
 

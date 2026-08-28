@@ -1,5 +1,8 @@
 # greensam-cli
 
+[![CI](https://github.com/Huayudong/greensam-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/Huayudong/greensam-cli/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+
 一个用 Java 从零构建的 CLI Agent，灵感来自 [Claude Code](https://docs.anthropic.com/en/docs/claude-code) 和 [OpenAI Codex CLI](https://github.com/openai/codex)。
 
 通过亲手实现来深入理解 CLI Agent 的核心原理：Agent Loop、Tool Calling、流式输出、终端交互。
@@ -116,7 +119,7 @@ data: [DONE]
 ├───────────────────────────────────────────────────┤
 │  Agent 层 (agent/)                                │
 │  AgentLoop → 核心推理循环                          │
-│  Tool / ToolRegistry → 工具接口与注册              │
+│  AbstractTool / ToolRegistry → 声明式工具基类与注册 │
 ├───────────────────────────────────────────────────┤
 │  Client 层 (client/)                              │
 │  OpenAiChatClient → 同步 API 调用                  │
@@ -146,35 +149,22 @@ data: [DONE]
 
 内置 `MAX_ITERATIONS = 20` 防止无限循环。支持同步（`run`）和流式（`runStreaming`）两种模式。
 
-#### Tool 接口（agent/Tool.java）
+#### AbstractTool 与声明式参数（agent/）
 
-每个工具只需实现 4 个方法：
-
-```java
-public interface Tool {
-    String getName();                    // 工具名称，如 "read_file"
-
-    String getDescription();             // 描述，LLM 根据此决定何时调用
-
-    JsonNode getParameters();            // JSON Schema，定义参数结构
-
-    String execute(JsonNode arguments);  // 执行逻辑，返回字符串结果
-}
-```
-
-`ToolRegistry` 管理所有工具，自动将 `Tool` 转换为 OpenAI API 需要的 `ToolDefinition` 格式。
-
-#### ChatMessage（model/ChatMessage.java）
-
-用工厂方法创建不同角色的消息：
+每个工具继承 `AbstractTool<Args>`，用一个参数 record + `@Param` 注解声明参数：
 
 ```java
-ChatMessage system = ChatMessage.system("你是一个助手");           // 系统提示词
-ChatMessage user = ChatMessage.user("读取 /tmp/test.txt");       // 用户输入
-ChatMessage assistant = ChatMessage.assistant("文件内容是...");         // LLM 文本回复
-ChatMessage toolCall = ChatMessage.assistantWithToolCalls(toolCalls); // LLM 工具调用
-ChatMessage toolResult = ChatMessage.toolResult(id, name, content);     // 工具执行结果
+public record Args(
+        @Param(value = "要执行的 shell 命令", required = true) String command,
+        @Param("超时秒数，默认 120") @JsonProperty("timeout_seconds") Integer timeoutSeconds) { ... }
 ```
+
+同一份注解同时驱动 JSON Schema 生成（发给 LLM）与参数绑定（接收 LLM 的调用），
+Schema 与解析共用单一事实来源，不会漂移。
+
+#### ToolRegistry（agent/ToolRegistry.java）
+
+工具注册表：管理所有 `Tool`，自动转换为 OpenAI API 需要的 `ToolDefinition` 格式。
 
 #### OpenAiChatClient（client/OpenAiChatClient.java）
 
@@ -199,49 +189,9 @@ SSE 流式实现：
 
 基于 JLine3 的终端 REPL：
 
-- 箭头键浏览历史、Ctrl+C 中断、Ctrl+D 退出
+- 箭头键浏览历史、Ctrl+C 中断当前输入行、Ctrl+D 退出
 - 内置命令：`/help`、`/clear`、`/exit`
-- 流式模式下逐字符输出带 ANSI 颜色
-
-### 项目结构
-
-```
-src/main/java/com/greensamcli/
-├── GreensamCli.java                    # main 入口，组装所有组件
-├── model/
-│   ├── ChatMessage.java                # 聊天消息（4种角色）
-│   ├── ToolCall.java                   # tool_call 数据结构
-│   ├── ToolDefinition.java             # OpenAI tools[] 格式
-│   ├── ChatRequest.java                # 请求体
-│   └── ChatResponse.java              # 响应体
-├── client/
-│   ├── ChatClient.java                 # 同步客户端接口
-│   ├── StreamingChatClient.java        # 流式客户端接口
-│   ├── StreamCallback.java             # 流式回调接口
-│   ├── OpenAiChatClient.java           # OkHttp 同步实现
-│   └── OpenAiStreamingChatClient.java  # SSE 流式实现
-├── agent/
-│   ├── Tool.java                       # 工具接口
-│   ├── ToolRegistry.java              # 工具注册表
-│   ├── ToolCallListener.java          # 工具执行回调
-│   ├── ToolExecutionException.java    # 工具执行异常
-│   └── AgentLoop.java                 # 核心 Agent 循环
-├── tools/
-│   ├── ReadFileTool.java              # 读取文件（截断超长文件）
-│   └── ListFilesTool.java             # 列出目录内容
-├── cli/
-│   ├── CliRenderer.java               # 渲染接口
-│   ├── TerminalRenderer.java          # ANSI 彩色终端输出
-│   └── Repl.java                      # JLine3 REPL 循环
-└── config/
-    └── AppConfig.java                 # 环境变量配置加载
-
-src/test/java/com/greensamcli/
-├── model/ChatMessageTest.java         # 4 tests — Jackson 序列化验证
-├── client/OpenAiChatClientTest.java   # 3 tests — MockWebServer API 测试
-├── agent/AgentLoopTest.java           # 6 tests — Agent 循环单元测试
-└── tools/ToolsTest.java               # 5 tests — 文件工具测试
-```
+- 终端过程可视化：每类事件带 emoji 前缀（见下节），流式模式下思考与回答逐字显示
 
 ---
 
@@ -252,7 +202,151 @@ src/test/java/com/greensamcli/
 - Java 17+
 - Maven 3.8+
 
-### git 版本控制
+### 1. 构建 fat jar
+
+```bash
+mvn clean package -DskipTests
+```
+
+### 2. 配置 API Key
+
+```bash
+cp .env.example .env
+# 编辑 .env，填入你的 OPENAI_API_KEY
+```
+
+支持任何兼容 OpenAI 格式的 API：通过 `OPENAI_BASE_URL` 指向中转、网关或本地部署。
+
+### 3. 运行
+
+```bash
+# Windows（PowerShell / CMD）
+.\bin\greensam-cli.cmd
+
+# 类 Unix
+./bin/greensam-cli.sh
+```
+
+启动脚本内部即 `java -jar`（含 UTF-8 编码参数，避免 Windows 控制台中文乱码），等价于：
+
+```bash
+java -jar target/greensam-cli-0.0.1-SNAPSHOT.jar
+```
+
+### 环境变量
+
+| 变量                       | 必须 | 默认值                      | 说明                             |
+|----------------------------|------|-----------------------------|----------------------------------|
+| `OPENAI_API_KEY`           | 是   | -                           | API 密钥                         |
+| `OPENAI_BASE_URL`          | 否   | `https://api.openai.com/v1` | API 地址（可用于兼容接口）       |
+| `GREENSAM_MODEL`           | 否   | `gpt-4o`                    | 模型名称                         |
+| `GREENSAM_SYSTEM_PROMPT`   | 否   | 内置提示词                  | 系统提示词                       |
+| `GREENSAM_STREAMING`       | 否   | `true`                      | 是否启用流式输出                 |
+| `GREENSAM_TIMEOUT_SECONDS` | 否   | `300`                       | HTTP 读超时秒数（非流式慢模型用）|
+
+配置优先级：系统环境变量 > `.env` 文件 > 内置默认值。
+
+### REPL 命令
+
+| 命令     | 说明               |
+|----------|--------------------|
+| `/help`  | 显示帮助           |
+| `/clear` | 清空对话历史并清屏 |
+| `/exit`  | 退出程序           |
+
+### 终端过程展示
+
+为了让 Agent 链路的每一步都可见，所有事件都用 emoji 前缀渲染
+（实现见 `cli/TerminalRenderer.java`；一个 emoji 代表系统的一类反应，
+每类事件独占一行/块，互不粘连）：
+
+| emoji | 含义 | 说明 |
+|-------|------|------|
+| 🥷🏻 | 用户 | 回显本轮输入 |
+| 🤖 | Agent 回答 | 同步整段显示；流式逐字打印（为一个可跨多行的段落块） |
+| 💭 | 思考 | 推理模型的思考过程：独立的 `reasoning_content` 字段，或正文内联 `<think>...</think>` 标签（GLM 系，自动剥离）；无思考输出则不出现 |
+| 🛠️ | 调用工具 | 所有工具统一使用（参数回显超 120 字符截断） |
+| ✅ | 工具结果 | 单行摘要：换行折叠为 ⏎，超 200 字符截断并标注原始字符数；全文仍在对话上下文中 |
+| 📊 | token 消耗 | 每轮 LLM 调用后的输入/输出用量与会话累计 |
+| ❌ | 错误 | API 错误、工具执行失败等 |
+| 💡 | 系统消息 | 启动提示、清空历史等 |
+
+📊 的前提：服务端返回 `usage`。同步模式天然支持；流式模式请求会携带
+`stream_options: {"include_usage": true}`，个别不支持的兼容服务端可能忽略（看不到 📊）或报错。
+
+### 运行测试
+
+```bash
+mvn test
+```
+
+测试套件覆盖 JSON 序列化、API 客户端（含超时行为）、Agent 循环、工具执行、配置解析，
+由 CI 在 **ubuntu + windows 双平台**矩阵验证（`ExecuteCommandTool` 有平台分支，单平台测不出回归）。
+测试数量以 `mvn test` 实际输出为准。
+
+---
+
+## 已知边界
+
+诚实标注当前版本的能力边界（详细规划见 [docs/business/roadmap.md](docs/business/roadmap.md)）：
+
+- **无交互式审批**：LLM 请求的写文件 / 执行命令操作当前直接执行，无需确认（审批层规划中）；
+- **无路径沙箱**：读写与命令执行没有工作目录边界，请只在可信目录中运行；
+- **命令黑名单仅为兜底**：拦截 `rm -rf /` 等灾难性命令，但可被构造绕过，**不是访问控制**；
+- **执行中无法中断**：Agent 回合进行中（含正在运行的命令）暂无法通过 Ctrl+C 终止（中断机制规划中）；
+- **对话历史无上限**：长会话会持续增长直至超出模型上下文窗口（上下文管理规划中）。
+
+---
+
+## 项目结构
+
+```
+src/main/java/com/greensamcli/
+├── GreensamCli.java                    # main 入口，组装所有组件
+├── model/
+│   ├── ChatMessage.java                # 聊天消息（4种角色）
+│   ├── ToolCall.java                   # tool_call 数据结构
+│   ├── ToolDefinition.java             # OpenAI tools[] 格式
+│   ├── ChatRequest.java                # 请求体
+│   └── ChatResponse.java               # 响应体
+├── client/
+│   ├── ChatClient.java                 # 同步客户端接口
+│   ├── StreamingChatClient.java        # 流式客户端接口
+│   ├── StreamCallback.java             # 流式回调接口
+│   ├── OpenAiChatClient.java           # OkHttp 同步实现
+│   └── OpenAiStreamingChatClient.java  # SSE 流式实现
+├── agent/
+│   ├── Tool.java                       # 工具接口
+│   ├── AbstractTool.java               # 声明式参数基类（Schema 生成 + 参数绑定）
+│   ├── Param.java                      # 参数描述注解
+│   ├── ToolRegistry.java               # 工具注册表
+│   ├── ToolCallListener.java           # 工具执行回调
+│   ├── ToolExecutionException.java     # 工具执行异常
+│   └── AgentLoop.java                  # 核心 Agent 循环
+├── tools/
+│   ├── ReadFileTool.java               # 读取文件（截断超长文件）
+│   ├── ListFilesTool.java              # 列出目录内容
+│   ├── WriteFileTool.java              # 写入/创建文件
+│   ├── EditFileTool.java               # 精确字符串替换编辑
+│   ├── GlobTool.java                   # 按模式搜索文件名
+│   ├── GrepTool.java                   # 正则搜索文件内容
+│   └── ExecuteCommandTool.java         # 执行 shell 命令（黑名单兜底 + 超时强杀）
+├── cli/
+│   ├── CliRenderer.java                # 渲染接口
+│   ├── TerminalRenderer.java           # ANSI 彩色终端输出
+│   └── Repl.java                       # JLine3 REPL 循环
+├── config/
+│   ├── AppConfig.java                  # 环境变量配置加载
+│   └── DotenvLoader.java               # .env 文件加载
+└── utils/
+    └── ToolSchemaUtils.java            # record → JSON Schema 生成
+```
+
+添加新工具只需继承 `AbstractTool` 声明参数 record，然后在 `GreensamCli.main()` 中注册。
+
+---
+
+## git 版本控制
 
 ```bash
 git push origin master     # 只推 gitee
@@ -264,153 +358,21 @@ git push all master        # 同时推 gitee 和 github（并行推送）
 git pull                   # 默认从 gitee 拉（origin/master）
 ```
 
-### 构建与运行
-
-```bash
-# 构建
-mvn clean package -DskipTests
-
-# 设置 API Key（必须）
-export OPENAI_API_KEY="sk-your-key-here"
-
-# 运行（流式模式）
-java -jar target/greensam-cli-0.0.1-SNAPSHOT.jar
-
-# 运行（非流式模式）
-GREENSAM_STREAMING=false java -jar target/greensam-cli-0.0.1-SNAPSHOT.jar
-```
-
-### 环境变量
-
-| 变量                     | 必须 | 默认值                      | 说明                       |
-|--------------------------|------|-----------------------------|----------------------------|
-| `OPENAI_API_KEY`         | 是   | -                           | API 密钥                   |
-| `OPENAI_BASE_URL`        | 否   | `https://api.openai.com/v1` | API 地址（可用于兼容接口） |
-| `GREENSAM_MODEL`         | 否   | `gpt-4o`                    | 模型名称                   |
-| `GREENSAM_SYSTEM_PROMPT` | 否   | 内置提示词                  | 系统提示词                 |
-| `GREENSAM_STREAMING`     | 否   | `true`                      | 是否启用流式输出           |
-
-### REPL 命令
-
-| 命令     | 说明         |
-|----------|--------------|
-| `/help`  | 显示帮助     |
-| `/clear` | 清空对话历史 |
-| `/exit`  | 退出程序     |
-
-### 运行测试
-
-```bash
-mvn test
-```
-
-18 个测试，覆盖序列化、API 客户端、Agent Loop、工具执行。
-
 ---
 
-## 技术选型
+## 后续方向
 
-| 依赖                 | 版本    | 用途                          |
-|----------------------|---------|-------------------------------|
-| OkHttp               | 4.12.0  | HTTP 客户端，同步和 SSE 流式  |
-| Jackson              | 2.20.1  | JSON 序列化/反序列化          |
-| JLine3               | 3.26.3  | 终端 REPL（历史、补全、ANSI） |
-| SLF4J + slf4j-simple | 2.0.16  | 日志                          |
-| Lombok               | 1.18.36 | 减少样板代码                  |
-| JUnit 5              | 5.10.2  | 单元测试                      |
-| MockWebServer        | 4.12.0  | API Mock 测试                 |
+完整的路线图、设计契约与决策记录见 [docs/business/roadmap.md](docs/business/roadmap.md)，重点方向：
 
----
+- **中断机制**：执行中 Ctrl+C 中断当前回合，含子进程强杀与对话状态修复
+- **交互式审批**：写 / 执行前终端确认（y/n/always），diff 预览，拒绝可恢复
+- **上下文管理**：token 估算 + 超限截断，防止长会话爆窗
+- **MCP 支持**：通过 `McpToolAdapter` 接入任何 MCP 兼容的工具服务器
 
-## 后续完善方向
-
-### 1. 更多工具
-
-| 工具            | 说明                                       | 难度 |
-|-----------------|--------------------------------------------|------|
-| `WriteFileTool` | 写入/创建文件 ✅ 已实现                    | 简单 |
-| `GrepTool`      | 正则搜索文件内容                           | 简单 |
-| `BashTool`      | 执行 shell 命令                            | 中等 |
-| `EditTool`      | 精确替换文件中的字符串（类似 Claude Code） | 中等 |
-| `WebSearchTool` | 联网搜索                                   | 中等 |
-
-添加新工具只需实现 `Tool` 接口，然后在 `GreensamCli.main()` 中注册：
-
-```java
-ToolRegistry toolRegistry = toolRegistry.register(new WriteFileTool());
-```
-
-### 2. 权限系统
-
-在 `ToolRegistry.executeTool()` 前加一层权限检查：
-
-```
-LLM 请求执行 write_file("/etc/passwd")
-    ↓
-权限检查：该路径是否允许写入？
-    ↓
-┌──────────────┐
-│ 提示用户确认   │ ← Allow write_file on /etc/passwd? [y/n]
-└──────────────┘
-```
-
-参考 Claude Code 的权限模式：自动允许读取，写入/执行需要确认。
-
-### 3. 对话上下文管理
-
-当前对话历史无限增长，会超出 token 限制。需要：
-
-- **Token 计数**：估算当前历史占用多少 token
-- **历史截断**：保留系统提示词 + 最近 N 轮对话
-- **历史压缩**：用 LLM 摘要旧对话，用摘要替代原文
-- **上下文窗口感知**：根据模型 token 上限动态调整
-
-### 4. 多模型支持
-
-当前硬编码 OpenAI 格式。可以抽象出 `Provider` 接口：
-
-```java
-public interface Provider {
-    ChatResponse send(ChatRequest request);
-    // 每家的 tool_call 格式不同，Provider 负责适配
-}
-```
-
-支持 Anthropic Claude（`tool_use` block）、Google Gemini 等。
-
-### 5. MCP（Model Context Protocol）支持
-
-[MCP](https://modelcontextprotocol.io/) 是 Anthropic 提出的标准化工具协议：
-
-```
-greensam-cli ←→ MCP Server ←→ 外部工具
-```
-
-实现一个 `McpToolAdapter` 将 MCP 服务器包装为 `Tool` 接口，就能接入任何 MCP 兼容的工具服务器。
-
-### 6. 提示词工程优化
-
-当前系统提示词很简陋。可以增强：
-
-- 项目上下文注入（当前目录结构、git 状态）
-- 工具使用示例（few-shot）
-- 输出格式指导（Markdown、代码块）
-- 角色设定（如"你是一个 Java 开发专家"）
-
-### 7. 构建与分发
-
-- **Maven Shade Plugin**：打包为包含所有依赖的 fat JAR
-- **GraalVM Native Image**：编译为原生二进制，秒启动
-- **jpackage**：打包为系统原生安装包
-
-### 8. 测试增强
-
-- Agent 端到端测试：MockWebServer 模拟完整的 tool_call 多轮交互
-- Streaming 测试：模拟 SSE 事件流
-- 覆盖率目标：80%+
+欢迎提 issue 交流与指正。
 
 ---
 
 ## 许可
 
-学习项目，仅供学习参考。
+[MIT](LICENSE)

@@ -18,9 +18,15 @@ import java.util.Map;
  *   <tr><td>GREENSAM_MODEL</td><td>否</td><td>gpt-4o</td><td>模型名称</td></tr>
  *   <tr><td>GREENSAM_SYSTEM_PROMPT</td><td>否</td><td>内置提示词</td><td>系统提示词</td></tr>
  *   <tr><td>GREENSAM_STREAMING</td><td>否</td><td>true</td><td>是否启用流式输出</td></tr>
+ *   <tr><td>GREENSAM_TIMEOUT_SECONDS</td><td>否</td><td>300</td><td>HTTP 读超时秒数（非流式模式下慢模型的完整生成可能远超 10 秒）</td></tr>
  * </table>
  */
 public class AppConfig {
+
+    /**
+     * HTTP 读超时默认秒数。
+     */
+    private static final int DEFAULT_TIMEOUT_SECONDS = 300;
 
     private final Map<String, String> fallbackEnv;
     @Getter
@@ -33,6 +39,8 @@ public class AppConfig {
     private final String systemPrompt;
     @Getter
     private final boolean streaming;
+    @Getter
+    private final int timeoutSeconds;
 
     public AppConfig() {
         this(Path.of("").toAbsolutePath());
@@ -50,6 +58,7 @@ public class AppConfig {
                 "你是一个运行在终端里的智能助手，可以读写本地文件、搜索代码、执行命令。"
                         + "请始终使用简体中文思考和回复，回答简洁、准确、可操作。");
         this.streaming = !"false".equalsIgnoreCase(resolveEnv("GREENSAM_STREAMING"));
+        this.timeoutSeconds = getIntEnv("GREENSAM_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS);
     }
 
     /**
@@ -82,5 +91,17 @@ public class AppConfig {
     private String getEnv(String name, String defaultValue) {
         String value = resolveEnv(name);
         return (value == null || value.isBlank()) ? defaultValue : value.trim();
+    }
+
+    /**
+     * 读取可选的整数配置，缺失时使用默认值；非整数时 fail-fast 并指明配置项。
+     */
+    private int getIntEnv(String name, int defaultValue) {
+        String value = getEnv(name, String.valueOf(defaultValue));
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            throw new IllegalStateException("配置项必须是整数: " + name + "，当前值: " + value);
+        }
     }
 }

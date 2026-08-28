@@ -20,6 +20,8 @@ import com.greensamcli.tools.WriteFileTool;
 import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
 
+import java.time.Duration;
+
 /**
  * greensam-cli 的主入口类——组装所有组件并启动 REPL。
  *
@@ -54,7 +56,12 @@ public class GreensamCli {
             AppConfig config = new AppConfig();
 
             // ② 创建基础设施
-            OkHttpClient httpClient = new OkHttpClient();
+            // 读超时必须显式配置：OkHttp 默认 10 秒，非流式模式下慢模型的完整生成
+            // （推理型模型常见 30 秒以上）会直接 SocketTimeoutException；
+            // 流式模式因"字节间超时"语义天然不受影响，但同步/流式共用同一 client，统一放宽。
+            OkHttpClient httpClient = new OkHttpClient.Builder()
+                    .readTimeout(Duration.ofSeconds(config.getTimeoutSeconds()))
+                    .build();
             ObjectMapper objectMapper = new ObjectMapper();
 
             // ③ 创建 API 客户端（同步 + 流式）

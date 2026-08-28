@@ -5,6 +5,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.greensamcli.agent.ToolExecutionException;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.condition.EnabledOnOs;
+import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
@@ -36,7 +38,10 @@ class ToolsTest {
         ReadFileTool tool = new ReadFileTool();
         JsonNode args = mapper.readTree("{\"path\":\"/nonexistent/file.txt\"}");
 
-        assertThrows(ToolExecutionException.class, () -> tool.execute(args));
+        ToolExecutionException ex = assertThrows(ToolExecutionException.class, () -> tool.execute(args));
+        // 错误信息需带解析后的绝对路径，帮助 LLM 一次自纠盘符 / 根路径歧义
+        assertTrue(ex.getMessage().contains("文件不存在"));
+        assertTrue(ex.getMessage().contains("解析为"));
     }
 
     @Test
@@ -416,6 +421,28 @@ class ToolsTest {
 
         assertTrue(result.contains("exit_code=0"));
         assertTrue(result.contains("hello_cli"));
+    }
+
+    @Test
+    void executeCommandTool_chineseOutputRoundTrip() throws Exception {
+        // 中文回环：echo 的中文经子进程管道输出后，必须能按 UTF-8 无乱码还原
+        // （Windows 侧依赖 cmd 前置 chcp 65001，否则 GBK 字节解码必挂）
+        ExecuteCommandTool tool = new ExecuteCommandTool();
+        String result = tool.execute(execArgs("echo 编码校验中文", null, null));
+
+        assertTrue(result.contains("exit_code=0"));
+        assertTrue(result.contains("编码校验中文"));
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void executeCommandTool_windowsNestedQuoteStillWorks() throws Exception {
+        // 模型常见命令形态 cmd /c "..." 与 chcp 65001 前缀叠加后，引号解析不能被破坏
+        ExecuteCommandTool tool = new ExecuteCommandTool();
+        String result = tool.execute(execArgs("cmd /c \"echo 嵌套引号中文\"", null, null));
+
+        assertTrue(result.contains("exit_code=0"));
+        assertTrue(result.contains("嵌套引号中文"));
     }
 
     @Test

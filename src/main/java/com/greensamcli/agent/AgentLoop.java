@@ -170,6 +170,9 @@ public class AgentLoop {
             return;
         }
 
+        // 本轮（可含多次 LLM 调用）的 token 用量合计，[0]=输入 [1]=输出
+        int[] usageTotals = new int[2];
+
         for (int i = 0; i < MAX_ITERATIONS; i++) {
             log.debug("Streaming agent loop iteration {}", i + 1);
 
@@ -180,8 +183,8 @@ public class AgentLoop {
             ChatMessage[] finalMessage = {null};
             Exception[] error = {null};
 
-            // 代理回调：将文本增量转发给外部 streamCallback，
-            // 同时在 onComplete/onError 时释放 latch
+            // 代理回调：将文本/思考增量转发给外部 streamCallback，
+            // token 用量就地累计，onComplete/onError 时释放 latch
             streamingClient.sendStreaming(
                     conversationHistory,
                     toolRegistry.getAllDefinitions(),
@@ -189,6 +192,19 @@ public class AgentLoop {
                         @Override
                         public void onContentDelta(String delta) {
                             streamCallback.onContentDelta(delta);
+                        }
+
+                        @Override
+                        public void onReasoningDelta(String delta) {
+                            streamCallback.onReasoningDelta(delta);
+                        }
+
+                        @Override
+                        public void onUsage(ChatResponse.Usage usage) {
+                            if (usage != null) {
+                                usageTotals[0] += usage.getPromptTokens();
+                                usageTotals[1] += usage.getCompletionTokens();
+                            }
                         }
 
                         @Override
@@ -233,6 +249,7 @@ public class AgentLoop {
             if (assistantMessage.getToolCalls() == null || assistantMessage.getToolCalls().isEmpty()) {
                 // 直接回复文本 → 循环结束
                 conversationHistory.add(assistantMessage);
+                notifyRoundUsage(listener, usageTotals[0], usageTotals[1]);
                 streamCallback.onComplete(assistantMessage);
                 return;
             }
@@ -250,6 +267,10 @@ public class AgentLoop {
      * 同步 Agent 循环的核心实现。
      */
     private ChatMessage executeLoop(ToolCallListener listener) {
+        // 本轮（可含多次 LLM 调用）的 token 用量合计
+        int roundPromptTokens = 0;
+        int roundCompletionTokens = 0;
+
         for (int i = 0; i < MAX_ITERATIONS; i++) {
             log.debug("Agent loop iteration {}", i + 1);
 
@@ -258,6 +279,13 @@ public class AgentLoop {
                     conversationHistory,
                     toolRegistry.getAllDefinitions()
             );
+
+            // 累计本次 LLM 调用的 token 用量
+            ChatResponse.Usage usage = response.getUsage();
+            if (usage != null) {
+                roundPromptTokens += usage.getPromptTokens();
+                roundCompletionTokens += usage.getCompletionTokens();
+            }
 
             ChatMessage assistantMessage = response.getAssistantMessage();
             if (assistantMessage == null) {
@@ -268,6 +296,7 @@ public class AgentLoop {
             if (!response.hasToolCalls()) {
                 // 直接回复文本 → 追加到历史，循环结束
                 conversationHistory.add(assistantMessage);
+                notifyRoundUsage(listener, roundPromptTokens, roundCompletionTokens);
                 return assistantMessage;
             }
 
@@ -281,6 +310,18 @@ public class AgentLoop {
         }
 
         throw new AgentLoopException("已达到最大循环次数（" + MAX_ITERATIONS + "），终止执行");
+    }
+
+    /**
+     * 回合结束时通知监听器本轮 token 用量合计。
+     * 未拿到任何 usage（服务端未返回）时不通知，避免渲染无意义的 0。
+     */
+    private void notifyRoundUsage(ToolCallListener listener, int promptTokens, int completionTokens) {
+        if (listener == null || (promptTokens <= 0 && completionTokens <= 0)) {
+            return;
+        }
+        listener.onRoundUsage(new ChatResponse.Usage(
+                promptTokens, completionTokens, promptTokens + completionTokens));
     }
 
     /**
@@ -318,9 +359,11 @@ public class AgentLoop {
                         ChatMessage.toolResult(toolCall.getId(), toolName, result)
                 );
             } catch (Exception e) {
-                // 工具执行失败：不终止循环，将错误信息回传给 LLM
+                // 工具执行失败：不终止循环，将错误信息回传给 LLM。
+                // 控制台仅一条 WARN 行（logback %nopex 已抑制堆栈），完整堆栈落文件；
+                // 带 toolName 便于从日志直接回溯到具体工具调用
                 String errorMsg = "工具执行失败: " + e.getMessage();
-                log.error(errorMsg, e);
+                log.warn("工具执行失败，已回传 LLM 重试决策: tool={}, error={}", toolName, e.getMessage(), e);
 
                 if (listener != null) {
                     listener.onToolCallFailed(toolName, errorMsg);

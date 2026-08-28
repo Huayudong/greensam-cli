@@ -220,4 +220,75 @@ class AgentLoopTest {
         assertEquals("tool", toolResult.getRole());
         assertTrue(toolResult.getContent().contains("错误:"));
     }
+
+    @Test
+    void run_multiCallUsage_汇总后回调listener() {
+        toolRegistry.register(new Tool() {
+            @Override public String getName() { return "echo"; }
+            @Override public String getDescription() { return "Echoes"; }
+            @Override public JsonNode getParameters() { return JsonNodeFactory.instance.objectNode(); }
+            @Override public String execute(JsonNode args) { return "ok"; }
+        });
+
+        ToolCall toolCall = ToolCall.builder()
+                .id("call_1").type("function")
+                .function(new ToolCall.FunctionCall("echo", "{}"))
+                .build();
+        // 第一次 LLM 调用：tool_call，用量 100/10
+        responses.add(new ChatResponse(null, List.of(
+                new ChatResponse.Choice(0, ChatMessage.assistantWithToolCalls(List.of(toolCall)), "tool_calls")
+        ), new ChatResponse.Usage(100, 10, 110)));
+        // 第二次 LLM 调用：文本，用量 200/20
+        responses.add(new ChatResponse(null, List.of(
+                new ChatResponse.Choice(0, ChatMessage.assistant("Done"), "stop")
+        ), new ChatResponse.Usage(200, 20, 220)));
+
+        List<ChatResponse.Usage> usages = new ArrayList<>();
+        ToolCallListener listener = new ToolCallListener() {
+            @Override public void onToolCallStarted(ToolCall call) { }
+            @Override public void onToolCallCompleted(String name, String result) { }
+            @Override public void onToolCallFailed(String name, String error) { }
+            @Override public void onRoundUsage(ChatResponse.Usage usage) { usages.add(usage); }
+        };
+
+        AgentLoop loop = new AgentLoop(chatClient, toolRegistry, objectMapper, "test");
+        loop.run("Echo", listener);
+
+        // 两次调用只回调一次，且用量为合计值
+        assertEquals(1, usages.size());
+        assertEquals(300, usages.get(0).getPromptTokens());
+        assertEquals(30, usages.get(0).getCompletionTokens());
+        assertEquals(330, usages.get(0).getTotalTokens());
+    }
+
+    @Test
+    void runStreaming_usage跨迭代汇总回调listener() {
+        // 流式客户端打桩：同步触发 onUsage 与 onComplete
+        com.greensamcli.client.StreamingChatClient streamingClient =
+                (messages, tools, callback) -> {
+                    callback.onUsage(new ChatResponse.Usage(50, 5, 55));
+                    callback.onComplete(ChatMessage.assistant("done"));
+                };
+
+        List<ChatResponse.Usage> usages = new ArrayList<>();
+        ToolCallListener listener = new ToolCallListener() {
+            @Override public void onToolCallStarted(ToolCall call) { }
+            @Override public void onToolCallCompleted(String name, String result) { }
+            @Override public void onToolCallFailed(String name, String error) { }
+            @Override public void onRoundUsage(ChatResponse.Usage usage) { usages.add(usage); }
+        };
+
+        AgentLoop loop = new AgentLoop(
+                chatClient, streamingClient, toolRegistry, objectMapper, "test");
+        loop.runStreaming("Hi", listener, new com.greensamcli.client.StreamCallback() {
+            @Override public void onContentDelta(String delta) { }
+            @Override public void onToolCallDelta(ToolCall toolCall) { }
+            @Override public void onComplete(ChatMessage fullAssistantMessage) { }
+            @Override public void onError(Exception e) { }
+        });
+
+        assertEquals(1, usages.size());
+        assertEquals(50, usages.get(0).getPromptTokens());
+        assertEquals(5, usages.get(0).getCompletionTokens());
+    }
 }

@@ -9,6 +9,7 @@ replay_pid*
 
 # Maven 构建输出
 target/
+dependency-reduced-pom.xml
 !.mvn/wrapper/maven-wrapper.jar
 
 # Maven 本地配置
@@ -30,7 +31,10 @@ out/
 .settings/
 .springBeans
 .sts4-cache/
-bin/
+# bin/ 原为 Eclipse 构建产物目录；本项目启动脚本也放这里，改为忽略内容、放行脚本
+bin/*
+!bin/greensam-cli.cmd
+!bin/greensam-cli.sh
 
 # IDE - VS Code
 .vscode/
@@ -58,6 +62,7 @@ desktop.ini
 # 敏感文件 — 绝对不要提交到 Git
 .env
 .env.*
+!.env.example
 *.key
 *.pem
 *.p12

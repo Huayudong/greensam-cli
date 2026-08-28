@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.greensamcli.model.ChatMessage;
 import com.greensamcli.model.ChatRequest;
+import com.greensamcli.model.ChatResponse;
 import com.greensamcli.model.ToolCall;
 import com.greensamcli.model.ToolDefinition;
 import lombok.extern.slf4j.Slf4j;
@@ -45,9 +46,11 @@ import java.util.List;
  * </ol>
  *
  * <p><b>工具调用的增量拼接</b>是最复杂的部分：LLM 返回工具调用时，
- * id 和 function.name 通常在第一个 delta 中出现，
+ * id 和 function.name 只在第一个 delta 中出现，
  * 而 function.arguments 会分成多个 delta 逐步传来（因为参数可能很长），
- * 需要用 index 字段维护一个 List 来逐步累积。</p>
+ * 需要用 index 字段维护一个 List 来逐步累积。
+ * 累积遵循协议级统一规则：非空值才写入，空值（字段缺省 / null / 空串）一律忽略，
+ * 保证对任何 OpenAI 兼容服务端都不需要按厂商适配。</p>
  */
 @Slf4j
 public class OpenAiStreamingChatClient implements StreamingChatClient {
@@ -79,12 +82,15 @@ public class OpenAiStreamingChatClient implements StreamingChatClient {
                 .tools(tools != null && tools.isEmpty() ? null : tools)
                 .build();
 
-        // 将 ChatRequest 转为 JSON 树，手动添加 "stream": true
-        // 这样做是因为 ChatRequest 模型是同步/流式共用的，不需要单独加 stream 字段
+        // 将 ChatRequest 转为 JSON 树，手动添加 "stream": true 与
+        // "stream_options": {"include_usage": true}（后者让服务端在流末尾附带
+        // 一个不含 choices、只含 usage 的统计事件；不支持的兼容服务端会忽略或报错）
+        // 这样做是因为 ChatRequest 模型是同步/流式共用的，不需要单独加流式字段
         String requestBody;
         try {
             JsonNode requestNode = objectMapper.valueToTree(request);
             ((ObjectNode) requestNode).put("stream", true);
+            ((ObjectNode) requestNode).putObject("stream_options").put("include_usage", true);
             requestBody = objectMapper.writeValueAsString(requestNode);
         } catch (Exception e) {
             callback.onError(e);
@@ -112,6 +118,9 @@ public class OpenAiStreamingChatClient implements StreamingChatClient {
         // 累积器：把所有 delta 拼接成完整的响应
         StringBuilder contentBuilder = new StringBuilder();
         List<ToolCall> toolCalls = new ArrayList<>();
+        // 内联 <think> 标签过滤器：GLM 系端点把思考过程混在 content 里传输，
+        // 需剥离后路由到 reasoning 回调，避免思考原文进对话历史
+        ThinkContentFilter thinkFilter = new ThinkContentFilter();
 
         try (Response response = httpClient.newCall(httpRequest).execute()) {
             if (!response.isSuccessful()) {
@@ -132,12 +141,13 @@ public class OpenAiStreamingChatClient implements StreamingChatClient {
 
             String line;
             while ((line = reader.readLine()) != null) {
-                // SSE 事件以 "data: " 开头，其他行（空行、注释行）跳过
-                if (!line.startsWith("data: ")) {
+                // SSE 事件以 "data:" 开头（冒号后带不带空格均符合 SSE 规范，
+                // 部分兼容网关会发 "data:{...}" 紧凑形式），其他行（空行、注释行）跳过
+                if (!line.startsWith("data:")) {
                     continue;
                 }
 
-                String data = line.substring(6).trim();
+                String data = line.substring(5).trim();
                 // [DONE] 是流结束标记
                 if ("[DONE]".equals(data)) {
                     break;
@@ -145,6 +155,17 @@ public class OpenAiStreamingChatClient implements StreamingChatClient {
 
                 try {
                     JsonNode chunk = objectMapper.readTree(data);
+
+                    // usage 统计事件：流末尾的独立 chunk，不含 choices，
+                    // 必须在 choices 判空之前处理（否则会被当空事件跳过）
+                    if (chunk.has("usage") && !chunk.get("usage").isNull()) {
+                        JsonNode usageNode = chunk.get("usage");
+                        callback.onUsage(new ChatResponse.Usage(
+                                usageNode.path("prompt_tokens").asInt(0),
+                                usageNode.path("completion_tokens").asInt(0),
+                                usageNode.path("total_tokens").asInt(0)));
+                    }
+
                     JsonNode choices = chunk.get("choices");
                     if (choices == null || choices.isEmpty()) {
                         continue;
@@ -153,11 +174,24 @@ public class OpenAiStreamingChatClient implements StreamingChatClient {
                     // delta 是本次事件的增量内容（区别于完整 message）
                     JsonNode delta = choices.get(0).get("delta");
 
-                    // 处理文本增量：LLM 生成的文字一段一段传来
+                    // 处理推理增量：推理型模型（GLM、DeepSeek 等）先输出思考过程，
+                    // 字段名为 reasoning_content；普通模型无此字段，不触发回调
+                    if (delta != null && delta.has("reasoning_content")
+                            && !delta.get("reasoning_content").isNull()) {
+                        callback.onReasoningDelta(delta.get("reasoning_content").asText());
+                    }
+
+                    // 处理文本增量：LLM 生成的文字一段一段传来。
+                    // 先过内联 think 过滤器：思考段路由到 onReasoningDelta，
+                    // 只有剥离后的正文才累计进最终消息并触发 onContentDelta
                     if (delta != null && delta.has("content") && !delta.get("content").isNull()) {
                         String contentDelta = delta.get("content").asText();
-                        contentBuilder.append(contentDelta);
-                        callback.onContentDelta(contentDelta);
+                        thinkFilter.feed(contentDelta,
+                                s -> {
+                                    contentBuilder.append(s);
+                                    callback.onContentDelta(s);
+                                },
+                                callback::onReasoningDelta);
                     }
 
                     // 处理工具调用增量：比文本更复杂，需要用 index 逐步拼接
@@ -176,26 +210,32 @@ public class OpenAiStreamingChatClient implements StreamingChatClient {
 
                             ToolCall existing = toolCalls.get(index);
 
-                            // 第一个 delta 通常包含 id 和 type
-                            if (tcDelta.has("id")) {
-                                existing.setId(tcDelta.get("id").asText());
+                            // 增量累积的统一规则：id / type / function.name 只在首个分片出现，
+                            // 后续分片中这些字段可能缺省、为 null 或重复下发空串，
+                            // 一律忽略——只有非空值才写入，绝不用空值覆盖已累积的真实值，
+                            // 不依赖任何特定服务端的分片习惯
+                            String id = tcDelta.path("id").asText("");
+                            if (!id.isEmpty()) {
+                                existing.setId(id);
                             }
-                            if (tcDelta.has("type")) {
-                                existing.setType(tcDelta.get("type").asText());
+                            String type = tcDelta.path("type").asText("");
+                            if (!type.isEmpty()) {
+                                existing.setType(type);
                             }
 
-                            // function.name 在第一个 delta 中出现
-                            // function.arguments 可能跨多个 delta 逐步拼接
+                            // function.arguments 是唯一允许跨分片逐步追加的字段
                             if (tcDelta.has("function")) {
                                 JsonNode fn = tcDelta.get("function");
-                                if (fn.has("name") && !fn.get("name").isNull()) {
-                                    existing.getFunction().setName(fn.get("name").asText());
+                                String name = fn.path("name").asText("");
+                                if (!name.isEmpty()) {
+                                    existing.getFunction().setName(name);
                                 }
-                                if (fn.has("arguments") && !fn.get("arguments").isNull()) {
+                                String argumentFragment = fn.path("arguments").asText("");
+                                if (!argumentFragment.isEmpty()) {
                                     // arguments 是逐步拼接的，新的片段追加到已有内容后面
                                     String currentArgs = existing.getFunction().getArguments();
                                     existing.getFunction().setArguments(
-                                            currentArgs + fn.get("arguments").asText());
+                                            currentArgs + argumentFragment);
                                 }
                             }
 
@@ -206,6 +246,14 @@ public class OpenAiStreamingChatClient implements StreamingChatClient {
                     log.warn("Failed to parse SSE chunk: {}", data, e);
                 }
             }
+
+            // 流收尾：把过滤器缓冲中跨增量的残留投递出去（可能命中流末尾的思考段尾部）
+            thinkFilter.flush(
+                    s -> {
+                        contentBuilder.append(s);
+                        callback.onContentDelta(s);
+                    },
+                    callback::onReasoningDelta);
 
             // 流结束，拼接完整的 assistant 消息
             String finalContent = contentBuilder.length() > 0 ? contentBuilder.toString() : null;

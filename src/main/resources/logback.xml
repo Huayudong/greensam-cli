@@ -8,13 +8,15 @@
 -->
 <configuration>
 
-    <!-- 控制台：仅 WARN/ERROR，避免 INFO 审计日志在终端刷屏 -->
+    <!-- 控制台：仅 WARN/ERROR，避免 INFO 审计日志在终端刷屏；
+         %nopex 抑制堆栈输出——完整堆栈只落文件，REPL 对话区不被 Java 堆栈污染
+         （工具失败等可恢复错误已由渲染层以 ❌ 行友好呈现） -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <filter class="ch.qos.logback.classic.filter.ThresholdFilter">
             <level>WARN</level>
         </filter>
         <encoder>
-            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%nopex%n</pattern>
             <charset>UTF-8</charset>
         </encoder>
     </appender>

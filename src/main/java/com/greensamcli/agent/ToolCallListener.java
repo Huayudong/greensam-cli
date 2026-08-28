@@ -1,5 +1,6 @@
 package com.greensamcli.agent;
 
+import com.greensamcli.model.ChatResponse;
 import com.greensamcli.model.ToolCall;
 
 /**
@@ -45,4 +46,13 @@ public interface ToolCallListener {
      * 工具执行失败时触发，error 是失败原因
      */
     void onToolCallFailed(String toolName, String error);
+
+    /**
+     * 一轮对话（一次 run / runStreaming，可含多次 LLM 调用）完成时触发，
+     * usage 是本轮所有 LLM 调用的 token 用量合计。
+     *
+     * <p>实现为 default 空方法：不关心用量的监听器无需实现。</p>
+     */
+    default void onRoundUsage(ChatResponse.Usage usage) {
+    }
 }

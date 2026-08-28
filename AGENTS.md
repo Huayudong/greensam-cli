@@ -5,27 +5,29 @@
 
 ## 一、构建与测试
 
-> 以下为示例命令，请替换为当前项目实际的工具链（Maven / Gradle / npm / go / cargo 等）。
-
 ```bash
 # 编译（跳过测试）
-<build_cmd> compile
+mvn compile
 
 # 日常开发：编译 + 单元测试
-<build_cmd> test
+mvn test
 
-# 打包
-<build_cmd> package
+# 打包（产出含全部依赖的 fat jar）
+mvn clean package -DskipTests
 
-# 启动应用
-<run_cmd>
+# 启动应用（需先打包；脚本内部固化 UTF-8 编码参数）
+bin/greensam-cli.cmd    # Windows
+./bin/greensam-cli.sh   # 类 Unix
 ```
+
+> JDK 说明：本机默认 Java 8，项目 target=17，命令行构建需先 `JAVA_HOME=D:/Java/jdk-21`（按实际 JDK 21 安装路径调整）。
 
 **每次交付前需满足**：
 
 - 编译通过
 - 现有测试全绿
 - 本次变更点有对应的测试或验证证据
+- 用户可见文档（README、快速开始）与本批变更保持同步
 
 ## 二、通用编码规范
 

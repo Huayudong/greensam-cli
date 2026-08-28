@@ -97,7 +97,13 @@ public class OpenAiChatClient implements ChatClient {
             }
 
             // 将 JSON 响应反序列化为 ChatResponse 对象
-            return objectMapper.readValue(responseBody, ChatResponse.class);
+            ChatResponse parsed = objectMapper.readValue(responseBody, ChatResponse.class);
+            // 同步响应同样剥离内联 <think> 思考段（GLM 系端点把思考混在 content 里）
+            ChatMessage assistant = parsed.getAssistantMessage();
+            if (assistant != null && assistant.getContent() != null) {
+                assistant.setContent(ThinkContentFilter.stripThinkBlock(assistant.getContent()));
+            }
+            return parsed;
         } catch (IOException e) {
             throw new ChatClientException("请求失败", e);
         }

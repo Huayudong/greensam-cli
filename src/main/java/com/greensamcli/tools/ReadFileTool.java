@@ -55,11 +55,13 @@ public class ReadFileTool extends AbstractTool<ReadFileTool.Args> {
     @Override
     protected String doExecute(Args args) throws ToolExecutionException {
         String pathStr = args.path();
-        Path path = Paths.get(pathStr);
+        // 统一解析为绝对路径：Windows 下 "/x.md" 这类盘符缺失的路径按当前工作盘解析，
+        // 转绝对路径后错误信息能直接暴露真实落点，帮助 LLM 一次自纠
+        Path path = Paths.get(pathStr).toAbsolutePath().normalize();
 
         // 前置检查：文件是否存在
         if (!Files.exists(path)) {
-            throw new ToolExecutionException("文件不存在: " + pathStr);
+            throw new ToolExecutionException("文件不存在: " + pathStr + "（解析为 " + path + "）");
         }
 
         // 前置检查：是否是普通文件（不是目录、符号链接等）

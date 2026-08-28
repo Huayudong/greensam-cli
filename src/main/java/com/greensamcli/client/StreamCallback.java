@@ -1,6 +1,7 @@
 package com.greensamcli.client;
 
 import com.greensamcli.model.ChatMessage;
+import com.greensamcli.model.ChatResponse;
 import com.greensamcli.model.ToolCall;
 
 /**
@@ -30,6 +31,25 @@ public interface StreamCallback {
      * 调用方应立即输出这段文本，实现打字机效果。
      */
     void onContentDelta(String delta);
+
+    /**
+     * 收到一段推理（思考过程）增量时触发。
+     *
+     * <p>推理型模型（如 GLM、DeepSeek 系列）会在正式回答前输出思考过程，
+     * 通过 delta 的 {@code reasoning_content} 字段增量传输（OpenAI 官方模型无此字段，
+     * 因此实现为 default 空方法，普通模型场景下永不触发）。</p>
+     */
+    default void onReasoningDelta(String delta) {
+    }
+
+    /**
+     * 收到本次请求的 token 用量统计时触发。
+     *
+     * <p>仅当请求携带 {@code stream_options: {"include_usage": true}} 且服务端支持时，
+     * 流的最后一个事件会附带 usage 统计（此时该事件不含 choices）。</p>
+     */
+    default void onUsage(ChatResponse.Usage usage) {
+    }
 
     /**
      * 收到工具调用增量时触发。

@@ -137,12 +137,28 @@ class ReplTest {
     private CliRenderer recordingRenderer() {
         return new CliRenderer() {
             @Override
+            public void displayUser(String text) {
+            }
+
+            @Override
             public void displaySystem(String text) {
                 systemMessages.add(text);
             }
 
             @Override
             public void displayAssistant(String text) {
+            }
+
+            @Override
+            public void displayAssistantDelta(String delta) {
+            }
+
+            @Override
+            public void displayAssistantEnd() {
+            }
+
+            @Override
+            public void displayReasoningDelta(String delta) {
             }
 
             @Override
@@ -156,6 +172,11 @@ class ReplTest {
             @Override
             public void displayError(String message) {
                 errors.add(message);
+            }
+
+            @Override
+            public void displayTokenUsage(int roundPromptTokens, int roundCompletionTokens,
+                                          int totalPromptTokens, int totalCompletionTokens) {
             }
         };
     }

@@ -1,6 +1,7 @@
 package com.greensamcli.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -70,19 +71,25 @@ public class ChatResponse {
         /**
          * 结束原因："stop"（文本回复）或 "tool_calls"（需要执行工具）
          */
+        @JsonProperty("finish_reason")
         private String finishReason;
     }
 
     /**
-     * Token 使用统计，可用于成本计算和上下文窗口管理
+     * Token 使用统计，可用于成本计算和上下文窗口管理。
+     * <p>API 以 snake_case 传输（{@code prompt_tokens} 等），
+     * 必须用 {@code @JsonProperty} 显式映射，否则反序列化后恒为 0。</p>
      */
     @Data
     @NoArgsConstructor
     @AllArgsConstructor
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Usage {
+        @JsonProperty("prompt_tokens")
         private int promptTokens;
+        @JsonProperty("completion_tokens")
         private int completionTokens;
+        @JsonProperty("total_tokens")
         private int totalTokens;
     }
 
