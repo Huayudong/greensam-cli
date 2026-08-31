@@ -66,9 +66,13 @@
             <artifactId>jline-terminal</artifactId>
             <version>3.26.3</version>
         </dependency>
+        <!-- jna provider：Java 17 下 JLine 唯一维护中的本地终端后端。
+             3.26 起全部本地 provider（jansi/jna/exec）都标记废弃，官方推荐
+             的 ffm provider 需 Java 22+；本项目 target 17，废弃提示已在
+             Repl 中按官方文档显式关闭 -->
         <dependency>
             <groupId>org.jline</groupId>
-            <artifactId>jline-terminal-jansi</artifactId>
+            <artifactId>jline-terminal-jna</artifactId>
             <version>3.26.3</version>
         </dependency>
 
@@ -129,7 +133,7 @@
                                     <mainClass>com.greensamcli.GreensamCli</mainClass>
                                 </transformer>
                                 <!-- 合并各依赖 jar 中的 META-INF/services 文件：
-                                     JLine 终端 provider（jansi/exec 等）与 SLF4J 的
+                                     JLine 终端 provider（jna/exec 等）与 SLF4J 的
                                      ServiceLoader 注册都依赖这些文件，缺合并会被覆盖丢失 -->
                                 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer"/>
                             </transformers>

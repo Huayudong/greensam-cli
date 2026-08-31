@@ -2,6 +2,7 @@ package com.greensamcli.agent;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.greensamcli.model.ToolDefinition;
+import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -25,6 +26,7 @@ import java.util.Map;
  * registry.register(new ListFilesTool());
  * }</pre>
  */
+@Slf4j
 public class ToolRegistry {
 
     /**
@@ -33,10 +35,22 @@ public class ToolRegistry {
     private final Map<String, Tool> tools = new HashMap<>();
 
     /**
+     * 工具执行钩子列表，按注册顺序回调（横切关注点如批次④的交互式审批在此挂载）
+     */
+    private final List<ToolExecutionHook> hooks = new ArrayList<>();
+
+    /**
      * 注册一个工具，后续 LLM 可以通过名称调用它
      */
     public void register(Tool tool) {
         tools.put(tool.getName(), tool);
+    }
+
+    /**
+     * 添加一个工具执行钩子，在每次 executeTool 前后回调
+     */
+    public void addHook(ToolExecutionHook hook) {
+        hooks.add(hook);
     }
 
     /**
@@ -66,16 +80,40 @@ public class ToolRegistry {
     /**
      * 根据名称执行工具。
      *
+     * <p>执行前后依次回调全部 {@link ToolExecutionHook}：
+     * 前置钩子任一返回拒绝理由即拦截（工具不会执行），后置钩子在
+     * 成功与失败时都会收到通知。</p>
+     *
      * @param name      工具名称（来自 LLM 的 tool_call.function.name）
      * @param arguments 工具参数（已解析为 JsonNode）
      * @return 工具执行的文本结果
-     * @throws ToolExecutionException 工具不存在或执行失败时抛出
+     * @throws ToolExecutionException 工具不存在、被钩子拦截或执行失败时抛出
      */
     public String executeTool(String name, JsonNode arguments) throws ToolExecutionException {
         Tool tool = tools.get(name);
         if (tool == null) {
             throw new ToolExecutionException("未知工具: " + name);
         }
-        return tool.execute(arguments);
+
+        for (ToolExecutionHook hook : hooks) {
+            String veto = hook.beforeExecute(name, arguments);
+            if (veto != null) {
+                log.info("工具执行被钩子拦截: tool={}, reason={}", name, veto);
+                throw new ToolExecutionException(veto);
+            }
+        }
+
+        try {
+            String result = tool.execute(arguments);
+            for (ToolExecutionHook hook : hooks) {
+                hook.afterExecute(name, arguments, result, null);
+            }
+            return result;
+        } catch (RuntimeException e) {
+            for (ToolExecutionHook hook : hooks) {
+                hook.afterExecute(name, arguments, null, e);
+            }
+            throw e;
+        }
     }
 }

@@ -10,16 +10,18 @@ import org.junit.jupiter.api.condition.OS;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 
 class ToolsTest {
 
-    private final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = new ObjectMapper();
 
     @Test
     void readFileTool_readsExistingFile(@TempDir Path tempDir) throws Exception {
@@ -407,7 +409,7 @@ class ToolsTest {
     /**
      * 构造 execute_command 参数。
      */
-    private JsonNode execArgs(String command, String cwd, Integer timeout) {
+    private static JsonNode execArgs(String command, String cwd, Integer timeout) {
         ObjectNode node = mapper.createObjectNode().put("command", command);
         if (cwd != null) node.put("cwd", cwd);
         if (timeout != null) node.put("timeout_seconds", timeout);
@@ -473,6 +475,98 @@ class ToolsTest {
         ExecuteCommandTool tool = new ExecuteCommandTool();
         assertThrows(ToolExecutionException.class,
                 () -> tool.execute(execArgs("echo hi", "/no/such/dir/xyz", null)));
+    }
+
+    /**
+     * 平台无关的长跑命令：Windows 用 ping 挂住（顺带覆盖两层 cmd 派生的进程树），
+     * 类 Unix 用 sleep。
+     */
+    private static String longRunningCommand() {
+        boolean windows = System.getProperty("os.name", "").toLowerCase().contains("win");
+        return windows ? "ping -n 30 127.0.0.1 > nul" : "sleep 30";
+    }
+
+    @Test
+    void executeCommandTool_用户中断_立即终止并抛中断异常() throws Exception {
+        ExecuteCommandTool tool = new ExecuteCommandTool();
+        AtomicReference<Exception> thrown = new AtomicReference<>();
+        Thread worker = new Thread(() -> {
+            try {
+                tool.execute(execArgs(longRunningCommand(), null, null));
+            } catch (Exception e) {
+                thrown.set(e);
+            }
+        }, "exec-interrupt-test");
+        worker.start();
+        // 等子进程真正起来再打断，避免打断落在进程启动前的窗口
+        Thread.sleep(1000);
+
+        long start = System.currentTimeMillis();
+        worker.interrupt();   // 模拟 AgentLoop.cancel() 对回合线程的打断
+        worker.join(5000);
+        long elapsed = System.currentTimeMillis() - start;
+
+        assertFalse(worker.isAlive(), "中断后工具应立即返回，而不是等满 30s 超时");
+        assertInstanceOf(ToolExecutionException.class, thrown.get());
+        assertTrue(thrown.get().getMessage().contains("中断"),
+                "异常信息应说明是用户中断: " + thrown.get().getMessage());
+        assertTrue(elapsed < 4000, "中断应立即生效，实际耗时 " + elapsed + "ms");
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void executeCommandTool_用户中断_windows进程树被整体清杀() throws Exception {
+        // 命令经两层 cmd /c 封装，ping.exe 是孙进程；
+        // 只杀直接子进程会留下孤儿 ping 继续跑，tree-kill 必须连它一起清掉
+        assertPingKilledAfterInterrupt();
+    }
+
+    @Test
+    @EnabledOnOs(OS.WINDOWS)
+    void executeCommandTool_超时_windows进程树被整体清杀() throws Exception {
+        ExecuteCommandTool tool = new ExecuteCommandTool();
+        String result = tool.execute(execArgs(longRunningCommand(), null, 1));
+
+        assertTrue(result.contains("超时"));
+        assertNoPingProcessLeft("超时强杀");
+    }
+
+    /**
+     * 中断路径的进程树清杀验证：起子进程 → 打断 → 探测 ping.exe 已不存在。
+     */
+    private static void assertPingKilledAfterInterrupt() throws Exception {
+        ExecuteCommandTool tool = new ExecuteCommandTool();
+        AtomicReference<Exception> thrown = new AtomicReference<>();
+        Thread worker = new Thread(() -> {
+            try {
+                tool.execute(execArgs(longRunningCommand(), null, null));
+            } catch (Exception e) {
+                thrown.set(e);
+            }
+        }, "exec-treekill-test");
+        worker.start();
+        Thread.sleep(1500);
+        worker.interrupt();
+        worker.join(5000);
+
+        assertInstanceOf(ToolExecutionException.class, thrown.get());
+        assertNoPingProcessLeft("用户中断强杀");
+    }
+
+    /**
+     * 探测系统中已无 ping.exe 残留（进程树清杀生效）。
+     */
+    private static void assertNoPingProcessLeft(String scenario) throws Exception {
+        // 给进程退出留一点落定时间
+        Thread.sleep(500);
+        Process probe = new ProcessBuilder("cmd", "/c", "tasklist /FI \"IMAGENAME eq ping.exe\" /NH")
+                .redirectErrorStream(true)
+                .start();
+        String output = new String(probe.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+        probe.waitFor();
+
+        assertFalse(output.contains("ping.exe"),
+                scenario + " 后不应有 ping.exe 残留，tasklist 输出: " + output.trim());
     }
 
     // ==================== 参数 Schema 形状 ====================

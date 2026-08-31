@@ -35,9 +35,9 @@ import java.util.regex.Pattern;
  * UTF-8 代码页，内层执行用户命令，保证中文输出可按 UTF-8 解码）、类 Unix 经 {@code sh -c}
  * 执行，以支持管道 / 重定向 / 链式命令等 shell 特性。</p>
  *
- * <p><b>护栏</b>：超时强杀进程（默认 {@value #DEFAULT_TIMEOUT_SECONDS}s）、
- * stdout/stderr 各截断到 {@value #MAX_OUTPUT_CHARS} 字符（保留头尾），
- * 避免构建日志等超长输出撑爆上下文。</p>
+ * <p><b>护栏</b>：超时或用户中断（AgentLoop.cancel() 的线程打断）时强杀整个进程树
+ * （默认 {@value #DEFAULT_TIMEOUT_SECONDS}s）、stdout/stderr 各截断到
+ * {@value #MAX_OUTPUT_CHARS} 字符（保留头尾），避免构建日志等超长输出撑爆上下文。</p>
  *
  * @author Macro Ray
  * @since 2026-08-13
@@ -160,12 +160,23 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
         boolean finished = waitFor(process, args.timeoutSeconds());
 
         if (!finished) {
-            // 超时：强杀进程，再 join 排空线程以回收已收集的部分输出
-            log.warn("命令超时（{}s），强制终止: cmd=[{}]", args.timeoutSeconds(), command);
-            process.destroyForcibly();
+            // waitFor 返回 false 有两种原因：超时，或用户中断（AgentLoop.cancel() 打断）。
+            // 先取走中断标志再收尾——中断标志会让 joinSilently 立即放弃等待、丢掉尾部输出
+            boolean interrupted = Thread.interrupted();
+            killProcessTree(process);
             joinSilently(process);
             joinSilently(stdoutThread);
             joinSilently(stderrThread);
+
+            if (interrupted) {
+                // 被打断 = 用户中断：以异常终结本工具，由 AgentLoop 作为工具结果回传 LLM；
+                // 恢复中断标志，保持打断语义沿调用链向上传递
+                log.info("命令因用户中断被强制终止: cmd=[{}]", command);
+                Thread.currentThread().interrupt();
+                throw new ToolExecutionException("命令因用户中断被强制终止");
+            }
+
+            log.warn("命令超时（{}s），强制终止: cmd=[{}]", args.timeoutSeconds(), command);
             return formatTimeout(stdout.toString(), stderr.toString(), args.timeoutSeconds());
         }
 
@@ -235,7 +246,24 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
     }
 
     /**
-     * 等待进程结束（带超时）。中断时恢复标志并视作未完成。
+     * 强杀进程树（含全部后代进程）。
+     *
+     * <p>Windows 下命令经两层 {@code cmd /c} 封装，{@link Process#destroyForcibly()}
+     * 只能杀掉直接子进程（外层 cmd），实际干活的孙进程（内层 cmd 及其启动的命令）
+     * 会成为孤儿继续运行并占着 stdout/stderr 管道。因此先快照全部后代逐个强杀，
+     * 再杀直接子进程——先杀父会让后代孤儿化，但快照拿到的句柄仍然有效。</p>
+     */
+    private static void killProcessTree(Process process) {
+        List<ProcessHandle> descendants = process.descendants().toList();
+        for (ProcessHandle descendant : descendants) {
+            descendant.destroyForcibly();
+        }
+        process.destroyForcibly();
+    }
+
+    /**
+     * 等待进程结束（带超时）。中断时恢复标志并视作未完成，
+     * 由调用方通过中断标志区分「超时」与「用户中断」。
      */
     private boolean waitFor(Process process, int timeoutSeconds) {
         try {

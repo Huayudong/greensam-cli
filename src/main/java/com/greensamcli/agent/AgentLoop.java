@@ -13,6 +13,7 @@ import lombok.extern.slf4j.Slf4j;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Agent Loop——整个 CLI Agent 的核心引擎。
@@ -60,6 +61,15 @@ import java.util.concurrent.CountDownLatch;
  *   <li>{@link #run} — 同步模式：等待 LLM 完整响应后才继续</li>
  *   <li>{@link #runStreaming} — 流式模式：LLM 的文本增量实时回调，工具执行仍为同步</li>
  * </ul>
+ *
+ * <h3>中断机制</h3>
+ * <p>AgentLoop 对「中断」只感知一个抽象事实：「循环可能被取消」。
+ * 信号来源（如 Repl 的 Ctrl+C 接线）在循环之外：外部线程调用 {@link #cancel()}，
+ * 循环在各安全点（发送 LLM 前后、执行每个工具前）检查取消标志，
+ * 命中即抛出 {@link AgentCancelledException} 终止当前回合。</p>
+ * <p>取消保证对话历史结构合法：本轮 assistant 发起的每个 tool_call
+ * 都会补上「用户已中断」结果（OpenAI 协议要求一一对应），
+ * 因此中断后可以直接继续提问。</p>
  */
 @Slf4j
 public class AgentLoop {
@@ -68,6 +78,10 @@ public class AgentLoop {
      * 最大循环次数，防止 LLM 陷入无限工具调用循环
      */
     private static final int MAX_ITERATIONS = 20;
+    /**
+     * 用户中断时为未执行 tool_call 补写的占位结果文本
+     */
+    private static final String INTERRUPTED_TOOL_RESULT = "用户已中断本轮执行，该工具调用未执行。";
     /**
      * 同步 API 客户端，用于 run() 方法
      */
@@ -94,6 +108,16 @@ public class AgentLoop {
      * 每次 API 调用都会发送完整历史，让 LLM 拥有完整上下文。
      */
     private final List<ChatMessage> conversationHistory;
+    /**
+     * 取消标志：cancel() 置位，回合开始/结束时复位。
+     * 只用标志判断取消，中断（interrupt）仅作为唤醒阻塞操作的信号
+     */
+    private final AtomicBoolean cancelRequested = new AtomicBoolean(false);
+    /**
+     * 当前执行回合的线程；null 表示空闲（无进行中的回合）。
+     * cancel() 借助它把中断信号送达阻塞中的操作（流式 latch 等待、子进程 waitFor）
+     */
+    private volatile Thread roundThread;
 
     /**
      * 同步模式构造函数（不使用流式）
@@ -117,23 +141,75 @@ public class AgentLoop {
     }
 
     /**
+     * 请求中断当前回合（幂等，线程安全，可从任意线程调用）。
+     *
+     * <p>置位取消标志并打断回合线程：阻塞在流式 latch 等待、子进程
+     * {@code waitFor} 上的操作会立刻感知；不可中断的阻塞（如非流式 HTTP 读）
+     * 则在响应返回后的下一个安全点丢弃结果。空闲（无进行中的回合）时为无操作，
+     * 不影响后续回合。</p>
+     */
+    public void cancel() {
+        Thread thread = roundThread;
+        if (thread == null) {
+            log.debug("收到取消请求，但当前无进行中的回合，忽略");
+            return;
+        }
+        log.info("收到取消请求，正在中断当前回合");
+        cancelRequested.set(true);
+        thread.interrupt();
+    }
+
+    /**
+     * 回合开始：记录回合线程并复位取消标志
+     */
+    private void beginRound() {
+        cancelRequested.set(false);
+        roundThread = Thread.currentThread();
+    }
+
+    /**
+     * 回合结束：清空回合线程记录，并清掉可能遗留的中断标志——
+     * 避免污染同一物理线程（通常是主线程）后续的阻塞操作（如 JLine 读取输入）
+     */
+    private void endRound() {
+        roundThread = null;
+        Thread.interrupted();
+    }
+
+    /**
+     * 取消安全点：已取消则抛出 {@link AgentCancelledException} 终止回合
+     */
+    private void checkCancelled() {
+        if (cancelRequested.get()) {
+            log.info("回合已被用户取消，停止执行");
+            throw new AgentCancelledException();
+        }
+    }
+
+    /**
      * 同步模式：运行一次 Agent 循环。
      * 等待 LLM 完整响应后才返回，适合不需要实时显示的场景。
      *
      * @param userInput 用户在终端输入的文本
      * @param listener  工具调用事件监听器，用于终端显示；传 null 则不通知
      * @return LLM 的最终文本回复（所有工具调用均已完成后）
+     * @throws AgentCancelledException 用户在回合期间取消
      */
     public ChatMessage run(String userInput, ToolCallListener listener) {
-        // 首次调用时插入系统提示词（只在对话开始时插入一次）
-        if (conversationHistory.isEmpty()) {
-            conversationHistory.add(ChatMessage.system(systemPrompt));
+        beginRound();
+        try {
+            // 首次调用时插入系统提示词（只在对话开始时插入一次）
+            if (conversationHistory.isEmpty()) {
+                conversationHistory.add(ChatMessage.system(systemPrompt));
+            }
+
+            // 将用户输入追加到历史
+            conversationHistory.add(ChatMessage.user(userInput));
+
+            return executeLoop(listener);
+        } finally {
+            endRound();
         }
-
-        // 将用户输入追加到历史
-        conversationHistory.add(ChatMessage.user(userInput));
-
-        return executeLoop(listener);
     }
 
     /**
@@ -144,23 +220,32 @@ public class AgentLoop {
      * @param userInput      用户输入
      * @param listener       工具调用事件监听器
      * @param streamCallback 流式文本回调，每收到一段文本增量就触发
+     * @throws AgentCancelledException 用户在回合期间取消
      */
     public void runStreaming(String userInput, ToolCallListener listener, StreamCallback streamCallback) {
-        if (conversationHistory.isEmpty()) {
-            conversationHistory.add(ChatMessage.system(systemPrompt));
+        beginRound();
+        try {
+            if (conversationHistory.isEmpty()) {
+                conversationHistory.add(ChatMessage.system(systemPrompt));
+            }
+
+            conversationHistory.add(ChatMessage.user(userInput));
+
+            executeLoopStreaming(listener, streamCallback);
+        } finally {
+            endRound();
         }
-
-        conversationHistory.add(ChatMessage.user(userInput));
-
-        executeLoopStreaming(listener, streamCallback);
     }
 
     /**
      * 流式 Agent 循环的核心实现。
      *
-     * <p>与同步版本的区别在于调用 LLM 的方式：
-     * 使用 StreamingChatClient，通过 CountDownLatch 等待流式传输完成后才继续。
-     * 工具执行逻辑与同步版本完全一致。</p>
+     * <p>与同步版本的区别在于调用 LLM 的方式：SSE 读取在独立守护线程中执行，
+     * 本线程阻塞在 {@link CountDownLatch} 上等待流式传输完成后才继续。
+     * 把读取挪出本线程的原因：SSE 是普通阻塞 socket 读，不响应线程中断；
+     * 若直接在本线程读，用户取消时只能等模型生成完整个响应，提示符迟迟不返回。
+     * 挪出后本线程的 latch 等待可被 cancel() 的 interrupt 立刻打断。</p>
+     * <p>工具执行逻辑与同步版本完全一致。</p>
      */
     private void executeLoopStreaming(ToolCallListener listener, StreamCallback streamCallback) {
         // 如果没有流式客户端，降级为同步模式
@@ -176,65 +261,105 @@ public class AgentLoop {
         for (int i = 0; i < MAX_ITERATIONS; i++) {
             log.debug("Streaming agent loop iteration {}", i + 1);
 
+            // 取消安全点：发送 LLM 前检查
+            checkCancelled();
+
             // CountDownLatch 用于等待流式传输完成
-            // 因为 streamingClient.sendStreaming 是同步方法但内部通过回调通知，
-            // 需要用 latch 阻塞直到 onComplete 或 onError 触发
             CountDownLatch latch = new CountDownLatch(1);
             ChatMessage[] finalMessage = {null};
             Exception[] error = {null};
+            // 本次 LLM 调用是否已作废：取消后不再向渲染层转发任何事件。
+            // 必须用每次迭代独立的标志而非全局 cancelRequested——取消后本回合立即返回
+            // 提示符，下一回合会把全局标志复位，而本次的残留流式线程可能还活着，
+            // 若它届时仍看全局标志，迟到的增量就会打进新一轮的提示符
+            AtomicBoolean discarded = new AtomicBoolean(false);
 
             // 代理回调：将文本/思考增量转发给外部 streamCallback，
-            // token 用量就地累计，onComplete/onError 时释放 latch
-            streamingClient.sendStreaming(
+            // token 用量就地累计；已作废后静默丢弃全部事件，onComplete/onError 释放 latch
+            Thread streamThread = new Thread(() -> streamingClient.sendStreaming(
                     conversationHistory,
                     toolRegistry.getAllDefinitions(),
                     new StreamCallback() {
                         @Override
                         public void onContentDelta(String delta) {
+                            if (discarded.get()) {
+                                return;
+                            }
                             streamCallback.onContentDelta(delta);
                         }
 
                         @Override
                         public void onReasoningDelta(String delta) {
+                            if (discarded.get()) {
+                                return;
+                            }
                             streamCallback.onReasoningDelta(delta);
                         }
 
                         @Override
                         public void onUsage(ChatResponse.Usage usage) {
-                            if (usage != null) {
-                                usageTotals[0] += usage.getPromptTokens();
-                                usageTotals[1] += usage.getCompletionTokens();
+                            if (discarded.get() || usage == null) {
+                                return;
                             }
+                            usageTotals[0] += usage.getPromptTokens();
+                            usageTotals[1] += usage.getCompletionTokens();
                         }
 
                         @Override
                         public void onToolCallDelta(ToolCall toolCall) {
+                            if (discarded.get()) {
+                                return;
+                            }
                             streamCallback.onToolCallDelta(toolCall);
                         }
 
                         @Override
                         public void onComplete(ChatMessage fullAssistantMessage) {
+                            if (discarded.get()) {
+                                return;
+                            }
                             finalMessage[0] = fullAssistantMessage;
                             latch.countDown();
                         }
 
                         @Override
                         public void onError(Exception e) {
+                            if (discarded.get()) {
+                                return;
+                            }
                             error[0] = e;
                             latch.countDown();
                         }
                     }
-            );
+            ), "llm-stream-reader");
+            // 守护线程：取消后残留的流式读取不阻止 JVM 退出
+            streamThread.setDaemon(true);
+            streamThread.start();
 
-            // 阻塞等待流式传输完成
+            // 阻塞等待流式传输完成（可被 cancel() 的中断打断）
             try {
                 latch.await();
             } catch (InterruptedException e) {
+                discarded.set(true);
+                // 中断由取消引起 → 走取消路径；其余情况恢复标志并按错误处理
+                checkCancelled();
                 Thread.currentThread().interrupt();
                 throw new AgentLoopException("流式传输被中断");
             }
 
+            // 取消安全点：流已结束但用户已取消 → 响应作废
+            if (cancelRequested.get()) {
+                discarded.set(true);
+                log.info("流式响应返回时用户已取消，丢弃响应");
+                throw new AgentCancelledException();
+            }
+
             if (error[0] != null) {
+                // 连接被取消引发的传输错误不当作失败，统一走取消路径
+                if (cancelRequested.get()) {
+                    discarded.set(true);
+                    throw new AgentCancelledException();
+                }
                 throw new AgentLoopException("流式传输失败: " + error[0].getMessage());
             }
 
@@ -274,11 +399,31 @@ public class AgentLoop {
         for (int i = 0; i < MAX_ITERATIONS; i++) {
             log.debug("Agent loop iteration {}", i + 1);
 
-            // ① 发送完整对话历史 + 工具定义给 LLM
-            ChatResponse response = client.send(
-                    conversationHistory,
-                    toolRegistry.getAllDefinitions()
-            );
+            // ① 取消安全点：发送 LLM 前检查
+            checkCancelled();
+
+            // ② 发送完整对话历史 + 工具定义给 LLM
+            ChatResponse response;
+            try {
+                response = client.send(
+                        conversationHistory,
+                        toolRegistry.getAllDefinitions()
+                );
+            } catch (Exception e) {
+                // 取消打断导致的调用失败（连接中止等）不当作错误，统一走取消路径
+                if (cancelRequested.get()) {
+                    throw new AgentCancelledException();
+                }
+                throw e;
+            }
+
+            // ③ 取消安全点：响应虽已返回，但用户已取消 →
+            //    整条 assistant 消息丢弃、不入历史（含 tool_calls 的消息若无结果
+            //    会让对话结构非法），回到提示符
+            if (cancelRequested.get()) {
+                log.info("LLM 响应返回时用户已取消，丢弃响应");
+                throw new AgentCancelledException();
+            }
 
             // 累计本次 LLM 调用的 token 用量
             ChatResponse.Usage usage = response.getUsage();
@@ -292,7 +437,7 @@ public class AgentLoop {
                 throw new AgentLoopException("响应中缺少 assistant 消息");
             }
 
-            // ② 判断：LLM 是直接回复文本，还是请求调用工具？
+            // ④ 判断：LLM 是直接回复文本，还是请求调用工具？
             if (!response.hasToolCalls()) {
                 // 直接回复文本 → 追加到历史，循环结束
                 conversationHistory.add(assistantMessage);
@@ -300,13 +445,13 @@ public class AgentLoop {
                 return assistantMessage;
             }
 
-            // ③ LLM 请求调用工具 → 先将 assistant 消息（含 tool_calls）追加到历史
+            // ⑤ LLM 请求调用工具 → 先将 assistant 消息（含 tool_calls）追加到历史
             conversationHistory.add(assistantMessage);
 
-            // ④ 执行所有工具调用
+            // ⑥ 执行所有工具调用
             executeTools(assistantMessage.getToolCalls(), listener);
 
-            // ⑤ 回到循环顶部，带着工具结果重新发送给 LLM
+            // ⑦ 回到循环顶部，带着工具结果重新发送给 LLM
         }
 
         throw new AgentLoopException("已达到最大循环次数（" + MAX_ITERATIONS + "），终止执行");
@@ -333,9 +478,20 @@ public class AgentLoop {
      *
      * <p>即使某个工具执行失败，也会把错误信息回传给 LLM（而非终止循环），
      * 让 LLM 有机会根据错误信息调整策略（例如换个路径重试）。</p>
+     *
+     * <p>用户中途取消时，剩余未执行的 tool_call 会全部补上
+     * 「用户已中断」结果再返回（见 {@link #fillInterruptedToolResults}）。</p>
      */
     private void executeTools(List<ToolCall> toolCalls, ToolCallListener listener) {
-        for (ToolCall toolCall : toolCalls) {
+        for (int i = 0; i < toolCalls.size(); i++) {
+            ToolCall toolCall = toolCalls.get(i);
+
+            // 取消安全点：执行前检查，命中则补齐剩余 tool_call 的占位结果并停止
+            if (cancelRequested.get()) {
+                fillInterruptedToolResults(toolCalls, i, listener);
+                return;
+            }
+
             String toolName = toolCall.getFunction().getName();
             // arguments 是 JSON 字符串，需要解析为 JsonNode 才能取具体字段
             String argumentsStr = toolCall.getFunction().getArguments();
@@ -374,6 +530,27 @@ public class AgentLoop {
                 conversationHistory.add(
                         ChatMessage.toolResult(toolCall.getId(), toolName, "错误: " + errorMsg)
                 );
+            }
+        }
+    }
+
+    /**
+     * 从 fromIndex 起把所有未执行的 tool_call 补上「用户已中断」占位结果。
+     *
+     * <p>OpenAI 协议要求 assistant 消息的每个 tool_call 必须有对应的一条
+     * tool result，补齐后历史才是合法对话——用户中断后可以直接继续提问
+     * （如「刚才做到哪了」），LLM 也能从中知道哪些步骤没执行。</p>
+     */
+    private void fillInterruptedToolResults(List<ToolCall> toolCalls, int fromIndex,
+                                            ToolCallListener listener) {
+        for (int i = fromIndex; i < toolCalls.size(); i++) {
+            ToolCall toolCall = toolCalls.get(i);
+            String toolName = toolCall.getFunction().getName();
+            conversationHistory.add(
+                    ChatMessage.toolResult(toolCall.getId(), toolName, INTERRUPTED_TOOL_RESULT)
+            );
+            if (listener != null) {
+                listener.onToolCallFailed(toolName, "用户已中断");
             }
         }
     }

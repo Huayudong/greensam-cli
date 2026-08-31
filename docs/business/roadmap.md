@@ -123,11 +123,13 @@
 
 **交付结果**：CliRenderer/TerminalRenderer 全事件 emoji 化；reasoning_content 与 usage 解析（顺修 Usage 漏标 @JsonProperty 恒为 0 的隐患）；AgentLoop 双模式用量汇总回调；95 测试全绿。变更详情见 `docs/engineering/2026-08-28-terminal-emoji-visualization.md`。
 
-### 批次② 中断机制（量级：1~2 天）
+### 批次② 中断机制（量级：1~2 天）——**已完成（2026-08-31）**
 
 按 2.2 / 2.3 契约执行，**本批完成 AgentLoop 扩展点的一次性设计**（cancel API + 工具执行前后 hook）。
 
 **验收标准**：执行中 Ctrl+C 可中断（含正在跑的 `execute_command` 子进程）；中断后对话可继续；`cancel()` 有不依赖真实终端的单测；踩坑记录落 docs/engineering。
+
+**交付结果**：`AgentLoop.cancel()`（置标志 + 打断回合线程，空闲时无操作）+ 三类取消安全点（发 LLM 前后、执行每个工具前）；流式读取挪到守护工作线程使取消即时生效（迟到增量按迭代独立标志丢弃）；`ExecuteCommandTool` 升级为进程树强杀（`ProcessHandle.descendants`）并区分「用户中断」与「超时」；Repl 经 JVM 级 `sun.misc.Signal("INT")` 接线（Windows jansi 终端不向 `Terminal.handle` 分派 CTRL_C_EVENT，实测踩坑）；未决 tool_call 补「用户已中断」占位结果保证对话结构合法；顺带铺设批次④扩展点 `ToolExecutionHook`（挂载于 `ToolRegistry.executeTool` 前后）。127 测试全绿（新增 12：取消 5 + 钩子 4 + 命令工具中断/tree-kill 3）。变更详情见 `docs/engineering/2026-08-31-interrupt-mechanism.md`。
 
 ### 批次③ 上下文截断（量级：约 1 天，独立，可插队）
 
@@ -185,3 +187,4 @@
 | 2026-08-28 | 初版：源自设计拷问共识，含四大批次契约、架构落位、待规划与已拒绝项 |
 | 2026-08-28 | 批次①「分发与文档修复」完成：fat jar / 启动脚本 / README / .env.example / 超时修复 / CI |
 | 2026-08-28 | 追加批次「终端过程可视化」完成：全事件 emoji 前缀（🥷🏻🤖💭🛠️✍🏻📖🗂️🔍⚙️✅📊❌💡）、reasoning/usage 解析、契约入 2.8 节 |
+| 2026-08-31 | 批次②「中断机制」完成：cancel API + 安全点 + 流式工作线程化 + 进程树强杀 + sun.misc 信号接线 + ToolExecutionHook 扩展点铺设（批次④直接可用） |

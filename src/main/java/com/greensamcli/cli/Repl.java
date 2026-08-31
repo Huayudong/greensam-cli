@@ -1,5 +1,6 @@
 package com.greensamcli.cli;
 
+import com.greensamcli.agent.AgentCancelledException;
 import com.greensamcli.agent.AgentLoop;
 import com.greensamcli.agent.ToolCallListener;
 import com.greensamcli.client.StreamCallback;
@@ -13,6 +14,8 @@ import org.jline.reader.LineReaderBuilder;
 import org.jline.reader.UserInterruptException;
 import org.jline.terminal.Terminal;
 import org.jline.terminal.TerminalBuilder;
+import sun.misc.Signal;
+import sun.misc.SignalHandler;
 
 import java.io.IOException;
 
@@ -101,6 +104,11 @@ public class Repl {
      * 启动 REPL 主循环，直到用户输入 /exit 或 Ctrl+D
      */
     public void run() {
+        // JLine 3.26 中全部本地 provider（jansi/jna/exec）都标记为废弃，官方唯一推荐
+        // 是需要 Java 22+ 的 ffm provider；本项目 target 17，只能继续用 jna provider，
+        // 按 JLine 文档提供的方式显式关闭废弃提示（该属性必须在创建终端前设置）
+        System.setProperty("org.jline.terminal.disableDeprecatedProviderWarning", "true");
+
         // 初始化 JLine3 终端
         Terminal terminal;
         try {
@@ -117,6 +125,21 @@ public class Repl {
         LineReader lineReader = LineReaderBuilder.builder()
                 .terminal(terminal)
                 .build();
+
+        // 执行中 Ctrl+C → 中断当前回合：回合执行期间终端处于常规模式（JLine 仅在读
+        // 输入时进 raw 模式），Ctrl+C 产生真实的中断信号，经 JVM 信号机制送达这里
+        // 注册的处理器，转成 agentLoop.cancel()；空闲读取输入期间终端处于 raw 模式，
+        // Ctrl+C 被当作普通按键由 JLine 接管（UserInterruptException，只清当前输入行），
+        // 不会生成信号，两种状态互不干扰。
+        // 用 JVM 级 Signal 而非 JLine 的 Terminal.handle 接线：Windows 终端 provider
+        // 不会把控制台 CTRL_C_EVENT 分派给 JLine 的信号处理器（jansi provider 实测踩坑），
+        // JVM 信号钩子在双平台都可靠。
+        try {
+            Signal.handle(new Signal("INT"), signal -> agentLoop.cancel());
+        } catch (Throwable e) {
+            // 信号机制不可用（极罕见）时降级：仅失去「执行中 Ctrl+C」，其余功能不受影响
+            log.warn("注册中断信号处理器失败，执行中 Ctrl+C 将不可用", e);
+        }
 
         System.out.println(BANNER);
         System.out.println();
@@ -260,7 +283,7 @@ public class Repl {
      * 清空终端屏幕。
      *
      * <p>统一通过 {@link Terminal#writer()} 输出 ANSI 清屏序列（清屏 + 光标归位），
-     * 不直接写 System.out：JLine 真终端（jansi provider）的 writer 会把 ANSI
+     * 不直接写 System.out：JLine 真终端（jna provider）的 writer 会把 ANSI
      * 翻译为 Windows 原生控制台操作，经典 conhost 上同样生效；
      * dumb 终端下 writer 即 System.out，由控制台自行解释 ANSI。
      * 包级可见便于测试中覆写为空实现，避免触碰真实终端。</p>
@@ -282,6 +305,10 @@ public class Repl {
             ChatMessage response = agentLoop.run(input, listener);
             renderer.displayAssistant(response.getContent());
             renderPendingUsage();
+        } catch (AgentCancelledException e) {
+            // 用户中断当前回合：不算错误，提示后回到提示符（历史已保证可继续提问）
+            pendingRoundUsage = null;
+            renderer.displaySystem("⏹ 已中断当前回合");
         } catch (Exception e) {
             pendingRoundUsage = null;
             renderer.displayError(e.getMessage());
@@ -343,6 +370,11 @@ public class Repl {
                     renderer.displayAssistantEnd();
                 }
             });
+        } catch (AgentCancelledException e) {
+            // 用户中断当前回合：关掉可能仍开着的流式块，提示后回到提示符
+            pendingRoundUsage = null;
+            renderer.displayAssistantEnd();
+            renderer.displaySystem("⏹ 已中断当前回合");
         } catch (Exception e) {
             pendingRoundUsage = null;
             renderer.displayAssistantEnd();

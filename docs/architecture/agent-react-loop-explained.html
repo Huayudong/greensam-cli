@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🤖 小机器人的思考转圈圈 —— ReAct 循环图解</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Microsoft YaHei", "PingFang SC", sans-serif;
+    background: linear-gradient(180deg, #fdf6e3 0%, #fff9f0 100%);
+    color: #4a3b2a;
+    line-height: 1.8;
+    padding: 32px 16px 64px;
+  }
+  .page { max-width: 860px; margin: 0 auto; }
+  h1 {
+    text-align: center;
+    font-size: 30px;
+    margin-bottom: 8px;
+    color: #d35400;
+  }
+  .subtitle { text-align: center; color: #9a8c78; margin-bottom: 40px; font-size: 15px; }
+  h2 {
+    font-size: 22px;
+    margin: 48px 0 16px;
+    padding-left: 14px;
+    border-left: 6px solid #f39c12;
+    color: #6b4f2a;
+  }
+  p { margin-bottom: 12px; font-size: 16px; }
+  code {
+    background: #f5e6c8;
+    border-radius: 4px;
+    padding: 1px 7px;
+    font-family: Consolas, monospace;
+    font-size: 14px;
+    color: #8e44ad;
+  }
+
+  /* ---- 主角卡片 ---- */
+  .cast { display: flex; flex-wrap: wrap; gap: 14px; margin: 20px 0; }
+  .card {
+    flex: 1 1 180px;
+    background: #fff;
+    border: 3px solid #f0dfc0;
+    border-radius: 16px;
+    padding: 18px 16px;
+    text-align: center;
+    box-shadow: 0 4px 0 #f0dfc0;
+  }
+  .card .emoji { font-size: 42px; display: block; margin-bottom: 8px; }
+  .card .name { font-weight: bold; font-size: 17px; color: #d35400; }
+  .card .code-name { font-size: 12.5px; color: #9a8c78; margin-top: 4px; word-break: break-all; }
+  .card .desc { font-size: 14px; margin-top: 8px; color: #6b5d4a; }
+
+  /* ---- 流程图 ---- */
+  .flow { display: flex; flex-direction: column; align-items: center; margin: 28px 0 8px; }
+  .node {
+    width: 100%; max-width: 560px;
+    background: #fff;
+    border: 3px solid;
+    border-radius: 16px;
+    padding: 16px 20px;
+    text-align: center;
+    position: relative;
+  }
+  .node .big { font-size: 20px; font-weight: bold; }
+  .node .small { font-size: 13.5px; color: #857666; margin-top: 4px; }
+  .node.start  { border-color: #3498db; background: #eaf6fd; }
+  .node.think  { border-color: #9b59b6; background: #f6effb; }
+  .node.ask    { border-color: #f39c12; background: #fef6e4; }
+  .node.tool   { border-color: #e67e22; background: #fdf0e0; }
+  .node.answer { border-color: #27ae60; background: #eafaf1; }
+  .node.end    { border-color: #e74c3c; background: #fdedec; }
+  .arrow {
+    font-size: 26px;
+    color: #c8a96a;
+    padding: 6px 0;
+    text-align: center;
+    line-height: 1;
+  }
+  .arrow .lbl { font-size: 13px; color: #9a8c78; display: block; }
+  .fork {
+    width: 100%; max-width: 560px;
+    display: flex; gap: 14px; align-items: stretch;
+  }
+  .fork .branch { flex: 1; display: flex; flex-direction: column; align-items: center; }
+  .loopback {
+    margin-top: 18px;
+    max-width: 560px; width: 100%;
+    border: 3px dashed #e67e22;
+    border-radius: 16px;
+    background: #fff7ee;
+    padding: 12px 18px;
+    text-align: center;
+    color: #b3541e;
+    font-weight: bold;
+    font-size: 15px;
+  }
+
+  /* ---- 小剧场 ---- */
+  .chat { margin: 20px 0; }
+  .bubble {
+    max-width: 78%;
+    border-radius: 16px;
+    padding: 12px 16px;
+    margin-bottom: 6px;
+    font-size: 15px;
+    position: relative;
+  }
+  .bubble.user {
+    background: #d9ecf9;
+    border: 2px solid #a8cce8;
+    margin-left: auto;
+    border-bottom-right-radius: 4px;
+  }
+  .bubble.bot {
+    background: #fff;
+    border: 2px solid #f0dfc0;
+    border-bottom-left-radius: 4px;
+  }
+  .bubble.tool {
+    background: #fdf0e0;
+    border: 2px dashed #e6b87e;
+    font-family: Consolas, monospace;
+    font-size: 13.5px;
+    max-width: 88%;
+  }
+  .bubble .who { font-size: 12px; color: #9a8c78; display: block; margin-bottom: 2px; }
+  .turn-tag {
+    text-align: center;
+    font-size: 13px;
+    color: #fff;
+    background: #c8a96a;
+    border-radius: 999px;
+    padding: 3px 16px;
+    margin: 14px auto 10px;
+    display: table;
+  }
+
+  /* ---- 保命规则 ---- */
+  .rules { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 16px; }
+  .rule {
+    flex: 1 1 320px;
+    background: #fff;
+    border-radius: 16px;
+    border: 3px solid #fadbd8;
+    padding: 18px 20px;
+  }
+  .rule h3 { font-size: 17px; color: #c0392b; margin-bottom: 8px; }
+  .rule p { font-size: 14.5px; margin: 0; }
+  .rule code { color: #c0392b; }
+
+  /* ---- 代码对照表 ---- */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 16px;
+    background: #fff;
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: 14.5px;
+  }
+  th, td { border: 1px solid #f0dfc0; padding: 10px 14px; text-align: left; }
+  th { background: #f9efdc; color: #6b4f2a; }
+  td:first-child { white-space: nowrap; }
+
+  .footer {
+    text-align: center;
+    margin-top: 56px;
+    color: #b3a48e;
+    font-size: 13px;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>🤖 小机器人是怎么回答问题的？</h1>
+  <p class="subtitle">greensam-cli 的心脏：ReAct 循环（对应源码 <code>AgentLoop.java</code>）· 2026-08-28</p>
+
+  <h2>🎬 先记住一个名字：ReAct = 想一想 + 动动手</h2>
+  <p>
+    <b>Re</b>ason（想一想）+ <b>Act</b>（动动手）。
+    小机器人回答你的问题，靠的不是一口气说完，
+    而是不停地<b>「想一步 → 做一步 → 再想一步」</b>，转圈圈，直到能回答你为止。
+  </p>
+  <p>就像你找饼干：先<b>想</b>「饼干会在哪？」→ <b>看</b>柜子（没有）→ 再<b>想</b>「那冰箱呢？」→ <b>看</b>冰箱（找到啦！）→ 告诉妈妈「饼干在冰箱里」。
+  找一次不够就再找一次——这就是 ReAct。</p>
+
+  <h2>🎭 故事里的四个主角</h2>
+  <div class="cast">
+    <div class="card">
+      <span class="emoji">🧒</span>
+      <div class="name">你</div>
+      <div class="code-name">user 消息</div>
+      <div class="desc">提问题的人：「帮我看项目里有几个 Java 文件？」</div>
+    </div>
+    <div class="card">
+      <span class="emoji">🧠</span>
+      <div class="name">大脑（LLM）</div>
+      <div class="code-name">大语言模型 API</div>
+      <div class="desc">只负责「想一想」，自己不会动手，动口指挥别人干活</div>
+    </div>
+    <div class="card">
+      <span class="emoji">📓</span>
+      <div class="name">小本本</div>
+      <div class="code-name">conversationHistory</div>
+      <div class="desc">一个 List，记下每个人说过的每一句话，谁都不许忘</div>
+    </div>
+    <div class="card">
+      <span class="emoji">🧰</span>
+      <div class="name">工具箱</div>
+      <div class="code-name">ToolRegistry</div>
+      <div class="desc">装着 read_file、grep、execute_command… 是大脑的「手」</div>
+    </div>
+  </div>
+
+  <h2>🎡 转圈圈全景图（核心就是这三步）</h2>
+  <div class="flow">
+    <div class="node start">
+      <div class="big">① 你说话 🧒</div>
+      <div class="small">你的问题被写进小本本 📓（第一次还会先写入系统提示词，告诉大脑「你是谁、有哪些规矩」）</div>
+    </div>
+    <div class="arrow">▼</div>
+    <div class="node think">
+      <div class="big">② 大脑想一想 🧠</div>
+      <div class="small">把<b>整本小本本</b> + <b>工具箱目录</b>一起寄给大脑（每次都寄完整的本本！），大脑读完开始想</div>
+    </div>
+    <div class="arrow">▼</div>
+    <div class="node ask">
+      <div class="big">③ 大脑二选一 🤔</div>
+      <div class="small">回话里带 <code>tool_calls</code> 吗？</div>
+    </div>
+    <div class="fork" style="margin-top:10px;">
+      <div class="branch">
+        <div class="arrow"><span class="lbl">没带 → 它想直接回答</span>▼</div>
+        <div class="node answer">
+          <div class="big">💬 直接回答</div>
+          <div class="small">答案写进小本本，念给你听</div>
+        </div>
+        <div class="arrow">▼</div>
+        <div class="node end">
+          <div class="big">🏁 结束，收工！</div>
+          <div class="small">循环退出，等你下一个问题</div>
+        </div>
+      </div>
+      <div class="branch">
+        <div class="arrow"><span class="lbl">带了 → 它想用工具</span>▼</div>
+        <div class="node tool">
+          <div class="big">🔧 动动动手</div>
+          <div class="small">工具箱照大脑的吩咐执行工具，结果（就算失败也照记！）写进小本本</div>
+        </div>
+        <div class="arrow">▼</div>
+        <div class="node think" style="border-style:dashed;">
+          <div class="big">↩️ 回到第 ② 步</div>
+          <div class="small">带着工具结果，大脑重新想一想</div>
+        </div>
+      </div>
+    </div>
+    <div class="loopback">
+      🔁 左右两条路里，「用工具」这条路永远通向「再想一想」——<br>
+      这就是那个圈：想 → 做 → 想 → 做 → …… → 直接回答才下车
+    </div>
+  </div>
+
+  <h2>🎞️ 实战小剧场：「项目里有几个 Java 文件？」</h2>
+  <div class="chat">
+    <div class="turn-tag">第 1 轮转圈圈</div>
+    <div class="bubble user"><span class="who">🧒 你（写入本本）</span>项目里有几个 Java 文件？</div>
+    <div class="bubble bot"><span class="who">🧠 大脑（第 1 次想）</span>我不知道文件数，但我可以用 glob 工具去数一数 → 请求调用工具！</div>
+    <div class="bubble tool"><span class="who">🔧 工具箱执行，结果写入本本</span>glob(pattern="**\/*.java") → 找到 34 个文件：AgentLoop.java, Repl.java, …</div>
+    <div class="turn-tag">第 2 轮转圈圈</div>
+    <div class="bubble bot"><span class="who">🧠 大脑（第 2 次想，这次本本里多了工具结果）</span>哦！本本上写着 34 个，我可以直接回答了，不需要工具。</div>
+    <div class="bubble bot"><span class="who">🤖 最终回答（写入本本 + 念给你听）</span>项目里一共有 34 个 Java 文件。🏁</div>
+  </div>
+  <p>两次「想一想」，一次「动动手」——本本上每一步都留了痕，所以大脑永远不会失忆。</p>
+
+  <h2>🛡️ 两条保命规则</h2>
+  <div class="rules">
+    <div class="rule">
+      <h3>🌀 最多转 20 圈</h3>
+      <p>大脑可能犯傻：「用工具 A → 结果又让它用工具 A……」停不下来。
+      代码里 <code>MAX_ITERATIONS = 20</code>：转到 20 圈还不回答，就强行刹车并报错
+      （抛出 <code>AgentLoopException</code>），绝不转晕倒。</p>
+    </div>
+    <div class="rule">
+      <h3>😭 工具失败了不哭，也不认输</h3>
+      <p>工具报错时<b>不会</b>终止循环，而是把「错误: …」也当作工具结果写进小本本
+      （<code>executeTools</code> 里的 try/catch）。这样大脑下轮能看到失败原因，换个办法重试——
+      就像你摔了一跤，爬起来换条路走。</p>
+    </div>
+  </div>
+
+  <h2>🗺️ 故事 ↔ 代码对照表</h2>
+  <table>
+    <tr><th>故事里的东西</th><th>代码里的真身（AgentLoop.java）</th></tr>
+    <tr><td>🧒 你说话</td><td><code>run(userInput, listener)</code> 把 user 消息追加进历史</td></tr>
+    <tr><td>📓 小本本</td><td><code>conversationHistory</code>（一个 List&lt;ChatMessage&gt;，贯穿整个会话）</td></tr>
+    <tr><td>🎡 转圈圈</td><td><code>executeLoop()</code> 里的 <code>for (int i = 0; i &lt; MAX_ITERATIONS; i++)</code></td></tr>
+    <tr><td>🧠 想一想</td><td><code>client.send(历史, 工具定义)</code> —— 每轮都寄完整历史</td></tr>
+    <tr><td>🤔 二选一</td><td><code>response.hasToolCalls()</code> ？走工具路 ： 直接回答收工</td></tr>
+    <tr><td>🔧 动动手</td><td><code>executeTools()</code> → <code>ToolRegistry.executeTool(名字, 参数)</code></td></tr>
+    <tr><td>📝 工具结果记账</td><td><code>ChatMessage.toolResult(id, 名字, 结果)</code> 追加进历史</td></tr>
+    <tr><td>🌀 20 圈刹车</td><td><code>throw new AgentLoopException("已达到最大循环次数…")</code></td></tr>
+    <tr><td>📺 你在终端看到的「正在调用工具…」</td><td><code>ToolCallListener</code> 的 onToolCallStarted / Completed / Failed 回调</td></tr>
+  </table>
+
+  <p class="footer">greensam-cli · docs/architecture · 给 5 岁孩子的 ReAct 循环图解 🍪</p>
+</div>
+</body>
+</html>
