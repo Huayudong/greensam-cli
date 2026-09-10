@@ -41,7 +41,12 @@ class ToolSchemaUtilsTest {
 
     /** 使用不支持类型的参数 record */
     record UnsupportedTypeArgs(
-            @Param("标签列表") List<String> tags) {
+            @Param("原始数组") int[] rawArray) {
+    }
+
+    /** List<String> 参数 record：映射为 string 数组 */
+    record ListArgs(
+            @Param(value = "候选答案", required = true) List<String> options) {
     }
 
     @Test
@@ -110,7 +115,17 @@ class ToolSchemaUtilsTest {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> ToolSchemaUtils.buildSchema(UnsupportedTypeArgs.class));
 
-        assertTrue(ex.getMessage().contains("tags"));
+        assertTrue(ex.getMessage().contains("rawArray"));
         assertTrue(ex.getMessage().contains("不支持的类型"));
+    }
+
+    @Test
+    void buildSchema_listStringEmitsStringArray() {
+        ObjectNode schema = ToolSchemaUtils.buildSchema(ListArgs.class);
+
+        assertEquals("array", schema.get("properties").get("options").get("type").asText());
+        assertEquals("string", schema.get("properties").get("options").get("items").get("type").asText());
+        assertEquals(List.of("options"), schema.get("required")
+                .valueStream().map(com.fasterxml.jackson.databind.JsonNode::asText).toList());
     }
 }

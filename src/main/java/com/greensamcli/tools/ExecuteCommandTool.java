@@ -26,10 +26,10 @@ import java.util.regex.Pattern;
  * 命中即硬拦截（抛 {@link ToolExecutionException}，不可绕过），覆盖灾难性 / 不可逆操作
  * （递归删除根目录、格式化、写裸盘、fork bomb、关机重启等）。</p>
  *
- * <p><b>关于交互式审批</b>：逐命令的"是否允许执行"确认属横切关注点，应由上层权限系统
- * 统一负责（如 Repl 层审批、diff 预览等），不在工具层掺入——与 {@link WriteFileTool}
- * 的安全哲学一致。黑名单仅兜底最危险的操作，并非完备的访问控制；交互式审批
- * 留作后续「权限系统」任务实现。</p>
+ * <p><b>关于交互式审批</b>：逐命令的"是否允许执行"确认属横切关注点，由上层的
+ * {@code ApprovalHook}（批次④，挂载于 ToolRegistry）统一负责——执行前展示命令原文，
+ * 用户三选确认；本工具的黑名单仅兜底最危险的操作（审批被 [a] 放行后仍生效），
+ * 并非完备的访问控制。</p>
  *
  * <p><b>平台封装</b>：Windows 经两层 {@code cmd /c} 封装（外层先 {@code chcp 65001} 切至
  * UTF-8 代码页，内层执行用户命令，保证中文输出可按 UTF-8 解码）、类 Unix 经 {@code sh -c}
@@ -64,13 +64,16 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
 
     /**
      * 危险命令黑名单（正则，对原始命令串 find 匹配）。
-     * <p>仅兜底灾难性 / 不可逆操作，非完备访问控制——完备控制由上层权限系统负责。</p>
+     * <p>仅兜底灾难性 / 不可逆操作，非完备访问控制——完备控制由上层审批系统负责。</p>
      * <ul>
      *   <li>递归删除根目录 / 家目录 / 全部（{@code rm -rf /}、{@code rm -rf ~}、{@code rm -rf *}）</li>
      *   <li>格式化文件系统（{@code mkfs...}、{@code format X:}）</li>
      *   <li>写裸设备（{@code dd of=/dev/...}、{@code > /dev/sdX}）</li>
      *   <li>fork bomb（{@code :(){ :|:& };:}）</li>
      *   <li>关机 / 重启</li>
+     *   <li>Windows 递归静默删除（{@code rd /s /q}、{@code rmdir /s /q}）</li>
+     *   <li>Windows 强制静默递归删除（{@code del /f /s /q}）</li>
+     *   <li>删除盘符根目录（{@code rd C:\}、{@code del D:\} 等）</li>
      * </ul>
      */
     private static final List<Pattern> DENYLIST = List.of(
@@ -86,7 +89,13 @@ public class ExecuteCommandTool extends AbstractTool<ExecuteCommandTool.Args> {
             // fork bomb  :(){ :|:& };:
             Pattern.compile(":\\(\\)\\s*\\{\\s*:\\s*\\|\\s*:&\\s*\\}\\s*;\\s*:"),
             // 关机 / 重启
-            Pattern.compile("\\b(shutdown|reboot|halt|poweroff|init\\s+0)\\b")
+            Pattern.compile("\\b(shutdown|reboot|halt|poweroff|init\\s+0)\\b"),
+            // Windows rd/rmdir 同时带 /s 与 /q（递归静默删除整棵目录树，任意顺序）
+            Pattern.compile("(?i)\\b(rd|rmdir)(\\.exe)?\\b(?=[^;&|]*/s\\b)(?=[^;&|]*/q\\b)"),
+            // Windows del 同时带 /f /s /q（强制递归静默删除，任意顺序）
+            Pattern.compile("(?i)\\bdel(\\.exe)?\\b(?=[^;&|]*/f\\b)(?=[^;&|]*/s\\b)(?=[^;&|]*/q\\b)"),
+            // rd/rmdir/del 直接以盘符根为目标（如 rd C:\ 、del D:\ ）
+            Pattern.compile("(?i)\\b(rd|rmdir|del)(\\.exe)?\\b[^;&|]*\\s[A-Za-z]:\\\\(\\s|$|\")")
     );
 
     public ExecuteCommandTool() {

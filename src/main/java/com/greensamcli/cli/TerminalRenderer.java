@@ -14,6 +14,8 @@ package com.greensamcli.cli;
  *   <li>📊 token 消耗 — 默认色（本轮与会话累计的输入/输出）</li>
  *   <li>❌ 错误 — 红色 {@code \033[31m}</li>
  *   <li>💡 系统消息 — 灰色 {@code \033[90m}</li>
+ *   <li>⚠️ 审批请求 — 黄色 {@code \033[33m}（标题 + 缩进的多行详情）</li>
+ *   <li>❓ 提问 — 问题 + a/b/c 候选 + d 自定义回答（默认色）</li>
  * </ul>
  *
  * <p><b>行纪律</b>：流式块（💭/🤖）与独立行事件（🛠️/✅/❌）互不粘连——
@@ -44,6 +46,8 @@ public class TerminalRenderer implements CliRenderer {
     private static final String EMOJI_USAGE = "📊";
     private static final String EMOJI_ERROR = "❌";
     private static final String EMOJI_SYSTEM = "💡";
+    private static final String EMOJI_APPROVAL = "⚠️";
+    private static final String EMOJI_QUESTION = "❓";
 
     /**
      * 工具调用参数回显截断长度，防止超长参数刷屏
@@ -151,6 +155,27 @@ public class TerminalRenderer implements CliRenderer {
                 + " / 输出 " + roundCompletionTokens
                 + "　｜　会话累计：输入 " + totalPromptTokens
                 + " / 输出 " + totalCompletionTokens);
+    }
+
+    @Override
+    public void displayApproval(String title, String detail) {
+        closeStreamingBlock();
+        System.out.println(YELLOW + EMOJI_APPROVAL + " 审批：" + title + RESET);
+        for (String line : (detail == null ? "" : detail).split("\n", -1)) {
+            System.out.println("    " + line);
+        }
+    }
+
+    @Override
+    public void displayQuestion(String question, java.util.List<String> options) {
+        closeStreamingBlock();
+        System.out.println(EMOJI_QUESTION + " " + question);
+        char label = 'a';
+        for (String option : options) {
+            System.out.println("  [" + label + "] " + option);
+            label++;
+        }
+        System.out.println("  [d] 自定义回答");
     }
 
     /**

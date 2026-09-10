@@ -2,14 +2,17 @@ package com.greensamcli;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.greensamcli.agent.AgentLoop;
+import com.greensamcli.agent.ApprovalHook;
 import com.greensamcli.agent.ToolRegistry;
 import com.greensamcli.cli.CliRenderer;
 import com.greensamcli.cli.Repl;
 import com.greensamcli.cli.TerminalRenderer;
+import com.greensamcli.cli.TerminalUserInteraction;
 import com.greensamcli.client.ChatClient;
 import com.greensamcli.client.OpenAiChatClient;
 import com.greensamcli.client.OpenAiStreamingChatClient;
 import com.greensamcli.config.AppConfig;
+import com.greensamcli.tools.AskUserTool;
 import com.greensamcli.tools.EditFileTool;
 import com.greensamcli.tools.ExecuteCommandTool;
 import com.greensamcli.tools.GlobTool;
@@ -21,6 +24,7 @@ import lombok.extern.slf4j.Slf4j;
 import okhttp3.OkHttpClient;
 
 import java.time.Duration;
+import java.util.Arrays;
 
 /**
  * greensam-cli 的主入口类——组装所有组件并启动 REPL。
@@ -36,7 +40,8 @@ import java.time.Duration;
  * ├── OpenAiChatClient          ← 同步 API 客户端
  * ├── OpenAiStreamingChatClient ← 流式 API 客户端
  *     │
- * ToolRegistry        ← 注册可用工具（read/list/write/edit/grep/glob/execute_command）
+ * ToolRegistry        ← 注册可用工具（read/list/write/edit/grep/glob/execute_command/ask_user）
+ *     │                   与审批钩子（写副作用工具执行前三选审批）
  *     │
  * AgentLoop           ← 核心推理引擎（注入 client + registry）
  *     │
@@ -81,7 +86,7 @@ public class GreensamCli {
                     config.getModel()
             );
 
-            // ④ 注册工具
+            // ④ 注册工具与审批钩子
             ToolRegistry toolRegistry = new ToolRegistry();
             // 文件读写类
             toolRegistry.register(new ReadFileTool());
@@ -93,6 +98,15 @@ public class GreensamCli {
             toolRegistry.register(new GlobTool());
             // 命令执行类
             toolRegistry.register(new ExecuteCommandTool());
+            // 用户交互类
+            TerminalUserInteraction interaction = new TerminalUserInteraction();
+            toolRegistry.register(new AskUserTool(interaction));
+            // 审批钩子：写副作用工具执行前三选审批；--yolo 或 GREENSAM_AUTO_APPROVE=true 时自动放行
+            boolean autoApprove = config.isAutoApprove() || hasYolo(args);
+            if (autoApprove) {
+                log.info("已启用自动放行（--yolo / GREENSAM_AUTO_APPROVE），跳过交互式审批");
+            }
+            toolRegistry.addHook(new ApprovalHook(interaction, autoApprove));
             // 未来添加新工具只需在这里 register 即可
 
             // ⑤ 创建 AgentLoop（注入 API 客户端和工具注册表）
@@ -105,7 +119,7 @@ public class GreensamCli {
 
             // ⑥ 创建终端渲染器和 REPL
             CliRenderer renderer = new TerminalRenderer();
-            Repl repl = new Repl(agentLoop, renderer, useStreaming);
+            Repl repl = new Repl(agentLoop, renderer, useStreaming, interaction);
 
             // ⑦ 启动 REPL 主循环
             repl.run();
@@ -119,5 +133,15 @@ public class GreensamCli {
             log.error("启动失败", e);
             System.exit(1);
         }
+    }
+
+    /**
+     * 判断启动参数是否包含 --yolo（跳过交互式审批，自动放行全部写操作）。
+     *
+     * @param args 启动参数
+     * @return true 表示全放行
+     */
+    static boolean hasYolo(String[] args) {
+        return args != null && Arrays.asList(args).contains("--yolo");
     }
 }

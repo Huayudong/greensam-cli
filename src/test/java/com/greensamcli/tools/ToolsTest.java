@@ -464,6 +464,52 @@ class ToolsTest {
     }
 
     @Test
+    void executeCommandTool_blocksWindowsRecursiveSilentDelete() {
+        ExecuteCommandTool tool = new ExecuteCommandTool();
+        // rd /s /q（任意顺序、大小写不敏感）
+        for (String cmd : new String[]{"rd /s /q build", "rd /q /s build",
+                "RMDIR /S /Q C:\\temp\\demo", "cmd /c rd /s /q dist"}) {
+            ToolExecutionException ex = assertThrows(ToolExecutionException.class,
+                    () -> tool.execute(execArgs(cmd, null, null)),
+                    "应拦截: " + cmd);
+            assertTrue(ex.getMessage().contains("黑名单"));
+        }
+    }
+
+    @Test
+    void executeCommandTool_blocksWindowsForceSilentDelete() {
+        ExecuteCommandTool tool = new ExecuteCommandTool();
+        // del /f /s /q 三件套（任意顺序）
+        for (String cmd : new String[]{"del /f /s /q *", "del /q /s /f C:\\logs\\*",
+                "DEL /F /S /Q *.tmp"}) {
+            ToolExecutionException ex = assertThrows(ToolExecutionException.class,
+                    () -> tool.execute(execArgs(cmd, null, null)),
+                    "应拦截: " + cmd);
+            assertTrue(ex.getMessage().contains("黑名单"));
+        }
+    }
+
+    @Test
+    void executeCommandTool_blocksDriveRootDelete() {
+        ExecuteCommandTool tool = new ExecuteCommandTool();
+        for (String cmd : new String[]{"rd C:\\", "del D:\\", "rmdir /s E:\\"}) {
+            assertThrows(ToolExecutionException.class,
+                    () -> tool.execute(execArgs(cmd, null, null)),
+                    "应拦截盘符根删除: " + cmd);
+        }
+    }
+
+    @Test
+    void executeCommandTool_allowsBenignWindowsCommands(@TempDir Path tempDir) {
+        ExecuteCommandTool tool = new ExecuteCommandTool();
+        // 黑名单外命令应正常放行（真实执行，指向临时目录中的不存在目标，无破坏、无交互挂起）
+        for (String cmd : new String[]{"dir /s /q", "del /q no-such-file.txt", "rd /q no-such-dir"}) {
+            String result = tool.execute(execArgs(cmd, tempDir.toString(), null));
+            assertNotNull(result);
+        }
+    }
+
+    @Test
     void executeCommandTool_rejectsEmptyCommand() {
         ExecuteCommandTool tool = new ExecuteCommandTool();
         assertThrows(ToolExecutionException.class,

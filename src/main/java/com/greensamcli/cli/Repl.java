@@ -69,6 +69,10 @@ public class Repl {
      */
     private final boolean useStreaming;
     /**
+     * 审批/提问共用的用户交互实现（与 ApprovalHook、AskUserTool 持有同一实例）
+     */
+    private final TerminalUserInteraction interaction;
+    /**
      * 会话累计 token 用量（输入），/clear 时重置
      */
     private int sessionPromptTokens;
@@ -84,9 +88,18 @@ public class Repl {
     private ChatResponse.Usage pendingRoundUsage;
 
     public Repl(AgentLoop agentLoop, CliRenderer renderer, boolean useStreaming) {
+        this(agentLoop, renderer, useStreaming, new TerminalUserInteraction());
+    }
+
+    /**
+     * 完整构造函数：注入与审批钩子、AskUserTool 共用的用户交互实现
+     */
+    public Repl(AgentLoop agentLoop, CliRenderer renderer, boolean useStreaming,
+                TerminalUserInteraction interaction) {
         this.agentLoop = agentLoop;
         this.renderer = renderer;
         this.useStreaming = useStreaming;
+        this.interaction = interaction;
     }
 
     private static final String BANNER = """
@@ -125,6 +138,9 @@ public class Repl {
         LineReader lineReader = LineReaderBuilder.builder()
                 .terminal(terminal)
                 .build();
+
+        // 终端就绪：审批钩子与提问工具此后可读用户输入
+        interaction.bind(lineReader, renderer);
 
         // 执行中 Ctrl+C → 中断当前回合：回合执行期间终端处于常规模式（JLine 仅在读
         // 输入时进 raw 模式），Ctrl+C 产生真实的中断信号，经 JVM 信号机制送达这里

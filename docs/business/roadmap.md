@@ -64,6 +64,10 @@
   `[y]` 本次允许 / `[n]` 拒绝 / `[a]` 本会话内该工具不再询问；
 - **拒绝语义**：`[n]` 不是抛异常，而是给 LLM 回一条「用户拒绝了该操作」的 tool result，
   让它有机会换方案——审批是给 agent 的反馈信号，不是刹车（Claude Code 同款语义）；
+- **提问工具（2026-08-31 契约扩展）**：新增 `ask_user` 工具——Agent 面对多种合理方案、
+  需要用户拍板时主动提问，四选交互：`[a]` 为最契合项目最推荐的候选答案，
+  `[b]`/`[c]` 为其他方向的候选答案，`[d]` 为用户自定义回答；选择结果作为
+  tool result 回传 LLM 继续执行；纯交互无副作用，不需要审批；
 - **跳过开关**：`GREENSAM_AUTO_APPROVE=true` 或启动参数 `--yolo`；
 - 顺带补全 `ExecuteCommandTool` 黑名单的 Windows 破坏性命令规则（`rd /s /q`、`del /f /s /q` 盘符等——现有正则只覆盖 Unix 系）；
 - 路径白名单沙箱不做（见第五章），README「已知边界」诚实标注。
@@ -137,11 +141,13 @@
 
 **验收标准**：估算器与截断策略单测覆盖边界（恰好阈值、system 保护、空历史）；截断发生时用户可见提示。
 
-### 批次④ 审批层（量级：2~3 天，依赖批次②）
+### 批次④ 审批层（量级：2~3 天，依赖批次②）——**已完成（2026-08-31）**
 
-按 2.5 契约执行，含黑名单 Windows 规则补全。
+按 2.5 契约执行，含黑名单 Windows 规则补全与 ask_user 提问工具。
 
 **验收标准**：拦截判定与终端交互分离（拦截逻辑可单测）；`[n]` 拒绝后 LLM 能换方案继续；`--yolo` 全放行；README「已知边界」同步。
+
+**交付结果**：`ApprovalHook` 挂载于批次②铺设的 `ToolExecutionHook` 扩展点（写副作用工具三选审批、会话内按工具放行、拒绝理由回传 LLM）；写文件审批展示 LCS 行级 diff（`LineDiffUtils`）；新增 `ask_user` 四选提问工具（a/b/c 候选 + d 自定义）；`TerminalUserInteraction` 复用 REPL 行读取器在回合中途读取输入，审批/提问期间 Ctrl+C 语义为拒绝/未作答（raw 模式按键路径，与回合中断的信号路径互不干扰）；`ExecuteCommandTool` 黑名单补 `rd /s /q`、`del /f /s /q`、盘符根删除三类 Windows 规则；`--yolo` / `GREENSAM_AUTO_APPROVE` 跳过开关。162 测试全绿（新增 35）。变更详情见 `docs/engineering/2026-08-31-approval-layer.md`。
 
 ---
 
@@ -188,3 +194,4 @@
 | 2026-08-28 | 批次①「分发与文档修复」完成：fat jar / 启动脚本 / README / .env.example / 超时修复 / CI |
 | 2026-08-28 | 追加批次「终端过程可视化」完成：全事件 emoji 前缀（🥷🏻🤖💭🛠️✍🏻📖🗂️🔍⚙️✅📊❌💡）、reasoning/usage 解析、契约入 2.8 节 |
 | 2026-08-31 | 批次②「中断机制」完成：cancel API + 安全点 + 流式工作线程化 + 进程树强杀 + sun.misc 信号接线 + ToolExecutionHook 扩展点铺设（批次④直接可用） |
+| 2026-08-31 | 批次④「审批层」完成：ApprovalHook 三选审批 + 写文件 diff 展示 + ask_user 四选提问工具（2.5 契约扩展）+ Windows 黑名单补全 + --yolo 开关；核心四批次全部收官 |

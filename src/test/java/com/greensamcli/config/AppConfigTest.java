@@ -8,6 +8,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -56,6 +57,27 @@ class AppConfigTest {
         IllegalStateException e = assertThrows(IllegalStateException.class, () ->
                 configWithEnvFile("OPENAI_API_KEY=test-key\nGREENSAM_TIMEOUT_SECONDS=abc\n"));
         assertTrue(e.getMessage().contains("GREENSAM_TIMEOUT_SECONDS"),
+                "报错信息应指明出错的配置项，实际: " + e.getMessage());
+    }
+
+    @Test
+    void autoApprove_defaultsToFalse() throws IOException {
+        AppConfig config = configWithEnvFile("OPENAI_API_KEY=test-key\n");
+        assertFalse(config.isAutoApprove());
+    }
+
+    @Test
+    void autoApprove_readsFromEnvFile() throws IOException {
+        AppConfig config = configWithEnvFile(
+                "OPENAI_API_KEY=test-key\nGREENSAM_AUTO_APPROVE=true\n");
+        assertTrue(config.isAutoApprove());
+    }
+
+    @Test
+    void autoApprove_nonBoolean_failsFastWithConfigName() {
+        IllegalStateException e = assertThrows(IllegalStateException.class, () ->
+                configWithEnvFile("OPENAI_API_KEY=test-key\nGREENSAM_AUTO_APPROVE=maybe\n"));
+        assertTrue(e.getMessage().contains("GREENSAM_AUTO_APPROVE"),
                 "报错信息应指明出错的配置项，实际: " + e.getMessage());
     }
 }

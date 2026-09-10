@@ -19,6 +19,7 @@ import java.util.Map;
  *   <tr><td>GREENSAM_SYSTEM_PROMPT</td><td>否</td><td>内置提示词</td><td>系统提示词</td></tr>
  *   <tr><td>GREENSAM_STREAMING</td><td>否</td><td>true</td><td>是否启用流式输出</td></tr>
  *   <tr><td>GREENSAM_TIMEOUT_SECONDS</td><td>否</td><td>300</td><td>HTTP 读超时秒数（非流式模式下慢模型的完整生成可能远超 10 秒）</td></tr>
+ *   <tr><td>GREENSAM_AUTO_APPROVE</td><td>否</td><td>false</td><td>true 时跳过写操作审批自动放行（也可用启动参数 --yolo）</td></tr>
  * </table>
  */
 public class AppConfig {
@@ -41,6 +42,8 @@ public class AppConfig {
     private final boolean streaming;
     @Getter
     private final int timeoutSeconds;
+    @Getter
+    private final boolean autoApprove;
 
     public AppConfig() {
         this(Path.of("").toAbsolutePath());
@@ -56,9 +59,12 @@ public class AppConfig {
         this.model = getEnv("GREENSAM_MODEL", "gpt-4o");
         this.systemPrompt = getEnv("GREENSAM_SYSTEM_PROMPT",
                 "你是一个运行在终端里的智能助手，可以读写本地文件、搜索代码、执行命令。"
+                        + "当任务存在多种合理方案、需要用户拍板或确认方向时，"
+                        + "先用 ask_user 工具给出候选方案让用户选择，不要擅自假设。"
                         + "请始终使用简体中文思考和回复，回答简洁、准确、可操作。");
         this.streaming = !"false".equalsIgnoreCase(resolveEnv("GREENSAM_STREAMING"));
         this.timeoutSeconds = getIntEnv("GREENSAM_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS);
+        this.autoApprove = getBooleanEnv("GREENSAM_AUTO_APPROVE", false);
     }
 
     /**
@@ -103,5 +109,19 @@ public class AppConfig {
         } catch (NumberFormatException e) {
             throw new IllegalStateException("配置项必须是整数: " + name + "，当前值: " + value);
         }
+    }
+
+    /**
+     * 读取可选的布尔配置，缺失时使用默认值；非 true/false 时 fail-fast 并指明配置项。
+     */
+    private boolean getBooleanEnv(String name, boolean defaultValue) {
+        String value = getEnv(name, String.valueOf(defaultValue));
+        if ("true".equalsIgnoreCase(value)) {
+            return true;
+        }
+        if ("false".equalsIgnoreCase(value)) {
+            return false;
+        }
+        throw new IllegalStateException("配置项必须是 true/false: " + name + "，当前值: " + value);
     }
 }

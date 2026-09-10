@@ -178,6 +178,14 @@ class ReplTest {
             public void displayTokenUsage(int roundPromptTokens, int roundCompletionTokens,
                                           int totalPromptTokens, int totalCompletionTokens) {
             }
+
+            @Override
+            public void displayApproval(String title, String detail) {
+            }
+
+            @Override
+            public void displayQuestion(String question, java.util.List<String> options) {
+            }
         };
     }
 

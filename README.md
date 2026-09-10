@@ -196,6 +196,21 @@ SSE 流式实现：
 - 内置命令：`/help`、`/clear`、`/exit`
 - 终端过程可视化：每类事件带 emoji 前缀（见下节），流式模式下思考与回答逐字显示
 
+### 交互式审批与提问（tools + agent/ApprovalHook）
+
+写副作用工具（`write_file` / `edit_file` / `execute_command`）执行前会暂停并请求审批：
+
+- 命令工具展示**完整命令原文**，写文件工具展示**完整 diff**；
+- 三选：`[y]` 本次允许 / `[n]` 拒绝 / `[a]` 本会话内该工具不再询问；
+  审批期间按 Ctrl+C 等价于拒绝；
+- `[n]` 不是中断，而是一条「用户拒绝了该操作」的工具结果回传给 LLM，
+  让它换方案继续；
+- 启动参数 `--yolo` 或环境变量 `GREENSAM_AUTO_APPROVE=true` 可全放行。
+
+`ask_user` 工具则让 Agent 在面对多种合理方案时主动向你提问：
+`[a]` 为它推荐的最契合项目的方案，`[b]`/`[c]` 是其他方向的候选，`[d]` 输入自定义回答，
+你的选择会作为工具结果回传给 LLM 继续执行。
+
 ---
 
 ## 快速开始
@@ -273,6 +288,8 @@ java -jar target/greensam-cli-0.0.1-SNAPSHOT.jar
 | 📊 | token 消耗 | 每轮 LLM 调用后的输入/输出用量与会话累计 |
 | ❌ | 错误 | API 错误、工具执行失败等 |
 | 💡 | 系统消息 | 启动提示、清空历史等 |
+| ⚠️ | 审批请求 | 写副作用工具执行前展示（命令原文 / 完整 diff），等待 y/n/a |
+| ❓ | 提问 | ask_user 工具：问题 + a/b/c 候选答案 + d 自定义回答 |
 
 📊 的前提：服务端返回 `usage`。同步模式天然支持；流式模式请求会携带
 `stream_options: {"include_usage": true}`，个别不支持的兼容服务端可能忽略（看不到 📊）或报错。
@@ -293,9 +310,9 @@ mvn test
 
 诚实标注当前版本的能力边界（详细规划见 [docs/business/roadmap.md](docs/business/roadmap.md)）：
 
-- **无交互式审批**：LLM 请求的写文件 / 执行命令操作当前直接执行，无需确认（审批层规划中）；
 - **无路径沙箱**：读写与命令执行没有工作目录边界，请只在可信目录中运行；
-- **命令黑名单仅为兜底**：拦截 `rm -rf /` 等灾难性命令，但可被构造绕过，**不是访问控制**；
+- **命令黑名单仅为兜底**：拦截 `rm -rf /`、`rd /s /q`、`del /f /s /q` 等破坏性命令，
+  但可被构造绕过，**不是访问控制**（逐命令的交互式审批是主要防线，--yolo 会关掉它）；
 - **非流式模式下中断有延迟**：流式模式（默认）下 Ctrl+C 立即生效；非流式模式的 HTTP 读取
   不可中断，Ctrl+C 要等本次 LLM 响应返回后才生效；
 - **对话历史无上限**：长会话会持续增长直至超出模型上下文窗口（上下文管理规划中）。
@@ -323,7 +340,11 @@ src/main/java/com/greensamcli/
 │   ├── Tool.java                       # 工具接口
 │   ├── AbstractTool.java               # 声明式参数基类（Schema 生成 + 参数绑定）
 │   ├── Param.java                      # 参数描述注解
-│   ├── ToolRegistry.java               # 工具注册表
+│   ├── ToolRegistry.java               # 工具注册表（支持 ToolExecutionHook 前后回调）
+│   ├── ToolExecutionHook.java          # 工具执行钩子扩展点（审批挂载于此）
+│   ├── ApprovalHook.java               # 交互式审批钩子（写副作用工具三选审批）
+│   ├── UserInteraction.java            # 审批/提问交互抽象
+│   ├── AgentCancelledException.java    # 用户中断回合异常
 │   ├── ToolCallListener.java           # 工具执行回调
 │   ├── ToolExecutionException.java     # 工具执行异常
 │   └── AgentLoop.java                  # 核心 Agent 循环
@@ -334,16 +355,19 @@ src/main/java/com/greensamcli/
 │   ├── EditFileTool.java               # 精确字符串替换编辑
 │   ├── GlobTool.java                   # 按模式搜索文件名
 │   ├── GrepTool.java                   # 正则搜索文件内容
-│   └── ExecuteCommandTool.java         # 执行 shell 命令（黑名单兜底 + 超时强杀）
+│   ├── ExecuteCommandTool.java         # 执行 shell 命令（黑名单兜底 + 超时强杀）
+│   └── AskUserTool.java                # 向用户提问（a/b/c 候选 + d 自定义）
 ├── cli/
 │   ├── CliRenderer.java                # 渲染接口
 │   ├── TerminalRenderer.java           # ANSI 彩色终端输出
+│   ├── TerminalUserInteraction.java    # 审批/提问的终端交互实现
 │   └── Repl.java                       # JLine3 REPL 循环
 ├── config/
 │   ├── AppConfig.java                  # 环境变量配置加载
 │   └── DotenvLoader.java               # .env 文件加载
 └── utils/
-    └── ToolSchemaUtils.java            # record → JSON Schema 生成
+    ├── ToolSchemaUtils.java            # record → JSON Schema 生成
+    └── LineDiffUtils.java              # 行级 diff（审批展示用）
 ```
 
 添加新工具只需继承 `AbstractTool` 声明参数 record，然后在 `GreensamCli.main()` 中注册。
@@ -368,8 +392,8 @@ git pull                   # 默认从 gitee 拉（origin/master）
 
 完整的路线图、设计契约与决策记录见 [docs/business/roadmap.md](docs/business/roadmap.md)，重点方向：
 
-- **交互式审批**：写 / 执行前终端确认（y/n/always），diff 预览，拒绝可恢复
 - **上下文管理**：token 估算 + 超限截断，防止长会话爆窗
+- **plan 模式**：先读后写，制定计划经用户确认再执行（审批层与 ask_user 已是基础设施）
 - **MCP 支持**：通过 `McpToolAdapter` 接入任何 MCP 兼容的工具服务器
 
 欢迎提 issue 交流与指正。

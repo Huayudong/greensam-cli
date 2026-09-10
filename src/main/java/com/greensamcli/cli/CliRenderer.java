@@ -1,5 +1,7 @@
 package com.greensamcli.cli;
 
+import java.util.List;
+
 /**
  * 终端输出渲染器接口。
  *
@@ -74,4 +76,22 @@ public interface CliRenderer {
      */
     void displayTokenUsage(int roundPromptTokens, int roundCompletionTokens,
                            int totalPromptTokens, int totalCompletionTokens);
+
+    /**
+     * 显示操作审批请求（⚠️ 黄色块：标题 + 命令原文 / 完整 diff 等多行详情）。
+     * 仅负责展示，用户输入由 {@link TerminalUserInteraction} 的行读取完成。
+     *
+     * @param title  操作标题（如 "execute_command 操作审批"）
+     * @param detail 多行详情文本
+     */
+    void displayApproval(String title, String detail);
+
+    /**
+     * 显示提问块（❓ 问题 + [a][b][c] 候选答案 + [d] 自定义回答）。
+     * 仅负责展示，用户输入由 {@link TerminalUserInteraction} 的行读取完成。
+     *
+     * @param question 问题文本
+     * @param options  候选答案（最多 3 个，[a] 为推荐项）
+     */
+    void displayQuestion(String question, List<String> options);
 }

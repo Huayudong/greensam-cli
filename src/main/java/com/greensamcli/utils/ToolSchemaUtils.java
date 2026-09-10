@@ -91,6 +91,11 @@ public final class ToolSchemaUtils {
         property.put("type", jsonType(component, argsType));
         property.put("description", param.value());
 
+        // List<String> 参数输出 string 数组的 items 约束，降低模型传错元素类型的概率
+        if (List.class.isAssignableFrom(component.getType())) {
+            property.putObject("items").put("type", "string");
+        }
+
         // 枚举参数额外输出合法取值列表，降低模型传错值的概率
         if (component.getType().isEnum()) {
             ArrayNode enumValues = property.putArray("enum");
@@ -103,6 +108,7 @@ public final class ToolSchemaUtils {
 
     /**
      * 组件类型映射为 JSON Schema 类型，不认识的类型在工具构造期即抛异常（fail fast）。
+     * 支持 {@code List<String>}（映射为 string 数组，items 固定为 string）。
      */
     private static String jsonType(RecordComponent component, Class<?> argsType) {
         Class<?> type = component.getType();
@@ -122,10 +128,13 @@ public final class ToolSchemaUtils {
         if (type.isEnum()) {
             return "string";
         }
+        if (List.class.isAssignableFrom(type)) {
+            return "array";
+        }
         throw new IllegalArgumentException(
                 "工具参数 record " + argsType.getSimpleName() + " 的组件 " + component.getName()
                         + " 使用了不支持的类型: " + type.getSimpleName()
-                        + "，支持 String / Integer / Long / Boolean / Double / 枚举");
+                        + "，支持 String / Integer / Long / Boolean / Double / 枚举 / List<String>");
     }
 
     /**
