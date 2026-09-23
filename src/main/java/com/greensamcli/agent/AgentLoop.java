@@ -8,6 +8,7 @@ import com.greensamcli.client.StreamingChatClient;
 import com.greensamcli.model.ChatMessage;
 import com.greensamcli.model.ChatResponse;
 import com.greensamcli.model.ToolCall;
+import com.greensamcli.utils.ContextTokenEstimator;
 import lombok.extern.slf4j.Slf4j;
 
 import java.util.ArrayList;
@@ -83,6 +84,10 @@ public class AgentLoop {
      */
     private static final String INTERRUPTED_TOOL_RESULT = "用户已中断本轮执行，该工具调用未执行。";
     /**
+     * 不设上下文上限的标记值：便捷构造（测试夹具等）使用，表示从不触发截断
+     */
+    private static final long NO_CONTEXT_LIMIT = Long.MAX_VALUE;
+    /**
      * 同步 API 客户端，用于 run() 方法
      */
     private final ChatClient client;
@@ -109,6 +114,10 @@ public class AgentLoop {
      */
     private final List<ChatMessage> conversationHistory;
     /**
+     * 上下文 token 上限：每次发送 LLM 前估算历史占用，超限则丢弃最旧的完整对话轮
+     */
+    private final long maxContextTokens;
+    /**
      * 取消标志：cancel() 置位，回合开始/结束时复位。
      * 只用标志判断取消，中断（interrupt）仅作为唤醒阻塞操作的信号
      */
@@ -128,15 +137,29 @@ public class AgentLoop {
     }
 
     /**
-     * 完整构造函数，同时支持同步和流式模式
+     * 完整构造函数，同时支持同步和流式模式。
+     * 不注入上下文上限（便捷入口，如测试夹具），不做上下文截断；
+     * 生产装配请使用带 maxContextTokens 的构造函数。
      */
     public AgentLoop(ChatClient client, StreamingChatClient streamingClient,
                      ToolRegistry toolRegistry, ObjectMapper objectMapper, String systemPrompt) {
+        this(client, streamingClient, toolRegistry, objectMapper, systemPrompt, NO_CONTEXT_LIMIT);
+    }
+
+    /**
+     * 完整构造函数：支持同步/流式模式与上下文截断上限。
+     *
+     * @param maxContextTokens 发送 LLM 前的上下文 token 上限，超限则丢弃最旧的完整对话轮
+     */
+    public AgentLoop(ChatClient client, StreamingChatClient streamingClient,
+                     ToolRegistry toolRegistry, ObjectMapper objectMapper, String systemPrompt,
+                     long maxContextTokens) {
         this.client = client;
         this.streamingClient = streamingClient;
         this.toolRegistry = toolRegistry;
         this.objectMapper = objectMapper;
         this.systemPrompt = systemPrompt;
+        this.maxContextTokens = maxContextTokens;
         this.conversationHistory = new ArrayList<>();
     }
 
@@ -263,6 +286,9 @@ public class AgentLoop {
 
             // 取消安全点：发送 LLM 前检查
             checkCancelled();
+
+            // 上下文截断安全点：发送前估算 token，超限则丢弃最旧的完整对话轮
+            truncateContextIfNeeded(listener);
 
             // CountDownLatch 用于等待流式传输完成
             CountDownLatch latch = new CountDownLatch(1);
@@ -402,6 +428,9 @@ public class AgentLoop {
             // ① 取消安全点：发送 LLM 前检查
             checkCancelled();
 
+            // 上下文截断安全点：发送前估算 token，超限则丢弃最旧的完整对话轮
+            truncateContextIfNeeded(listener);
+
             // ② 发送完整对话历史 + 工具定义给 LLM
             ChatResponse response;
             try {
@@ -467,6 +496,39 @@ public class AgentLoop {
         }
         listener.onRoundUsage(new ChatResponse.Usage(
                 promptTokens, completionTokens, promptTokens + completionTokens));
+    }
+
+    /**
+     * 发送 LLM 前的上下文截断：估算历史 token 占用，超过上限则丢弃最旧的完整对话轮。
+     *
+     * <p>截断是「必炸 → 偶尔降智」的止血手段：system 消息与最后一轮对话永远保留
+     * （保证当前任务上下文完整），被丢的是最早的历史记忆。真发生截断时通过
+     * listener 回调提示用户，不静默失忆。</p>
+     *
+     * <p>注意 {@code client.send} / {@code sendStreaming} 持有 conversationHistory
+     * 的活引用，截断结果必须原地替换（clear + addAll）而非换新列表。</p>
+     */
+    private void truncateContextIfNeeded(ToolCallListener listener) {
+        long estimated = ContextTokenEstimator.estimateMessages(conversationHistory);
+        if (estimated <= maxContextTokens) {
+            return;
+        }
+        ContextTruncator.TruncateResult result =
+                ContextTruncator.truncate(conversationHistory, maxContextTokens);
+        if (result.droppedCount() <= 0) {
+            // 只剩 system + 最后一轮仍超限：没有可安全丢弃的轮次，带着风险放行请求
+            log.warn("上下文超限（估算 {} tokens > 上限 {}），但无可安全丢弃的对话轮，保持原样发送",
+                    estimated, maxContextTokens);
+            return;
+        }
+        conversationHistory.clear();
+        conversationHistory.addAll(result.keptMessages());
+        long estimatedAfter = ContextTokenEstimator.estimateMessages(conversationHistory);
+        log.info("上下文截断完成：丢弃 {} 条最旧消息，估算 {} → {} tokens（上限 {}）",
+                result.droppedCount(), estimated, estimatedAfter, maxContextTokens);
+        if (listener != null) {
+            listener.onContextTruncated(result.droppedCount(), estimated);
+        }
     }
 
     /**

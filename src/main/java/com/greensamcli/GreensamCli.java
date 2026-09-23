@@ -114,7 +114,8 @@ public class GreensamCli {
 
             AgentLoop agentLoop = new AgentLoop(
                     chatClient, streamingClient,
-                    toolRegistry, objectMapper, config.getSystemPrompt()
+                    toolRegistry, objectMapper, config.getSystemPrompt(),
+                    config.getMaxContextTokens()
             );
 
             // ⑥ 创建终端渲染器和 REPL

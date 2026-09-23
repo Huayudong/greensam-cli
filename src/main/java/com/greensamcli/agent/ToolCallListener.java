@@ -55,4 +55,18 @@ public interface ToolCallListener {
      */
     default void onRoundUsage(ChatResponse.Usage usage) {
     }
+
+    /**
+     * 发送 LLM 前上下文超限、已丢弃最旧对话时触发。
+     *
+     * <p>截断的目的是把「必然爆窗」降级为「轻微失忆」：system 消息与
+     * 最近一轮对话永远保留，会话仍可继续。通过回调告知用户，不静默失忆。</p>
+     *
+     * <p>实现为 default 空方法：不关心截断提示的监听器无需实现。</p>
+     *
+     * @param droppedCount    被丢弃的最旧消息总条数（按完整对话轮为单位丢弃）
+     * @param estimatedTokens 触发截断时整段历史的估算 token 数（字符近似，保守高估）
+     */
+    default void onContextTruncated(int droppedCount, long estimatedTokens) {
+    }
 }

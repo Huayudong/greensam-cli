@@ -6,6 +6,7 @@ import com.fasterxml.jackson.databind.node.JsonNodeFactory;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.greensamcli.client.ChatClient;
 import com.greensamcli.model.*;
+import com.greensamcli.utils.ContextTokenEstimator;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -290,5 +291,78 @@ class AgentLoopTest {
         assertEquals(1, usages.size());
         assertEquals(50, usages.get(0).getPromptTokens());
         assertEquals(5, usages.get(0).getCompletionTokens());
+    }
+
+    @Test
+    void run_上下文超限_截断最旧轮后发送并回调listener() {
+        // 第一轮的 assistant 回复塞入大文本，使第二轮发送前历史超出阈值
+        String bigReply = "回".repeat(2000);
+        responses.add(new ChatResponse(null, List.of(
+                new ChatResponse.Choice(0, ChatMessage.assistant(bigReply), "stop")
+        ), null));
+        responses.add(new ChatResponse(null, List.of(
+                new ChatResponse.Choice(0, ChatMessage.assistant("第二答"), "stop")
+        ), null));
+
+        List<List<ChatMessage>> sentMessages = new ArrayList<>();
+        ChatClient capturingClient = (messages, tools) -> {
+            sentMessages.add(new ArrayList<>(messages));
+            return responses.get(sentMessages.size() - 1);
+        };
+
+        // 阈值恰好容纳 system + 最后一轮：第二轮发送前必超限，丢弃第一轮后恰好回落
+        long maxTokens = ContextTokenEstimator.estimateMessages(List.of(
+                ChatMessage.system("test"),
+                ChatMessage.user("第二问"),
+                ChatMessage.assistant("第二答")));
+
+        List<String> events = new ArrayList<>();
+        ToolCallListener listener = new ToolCallListener() {
+            @Override public void onToolCallStarted(ToolCall call) { }
+            @Override public void onToolCallCompleted(String name, String result) { }
+            @Override public void onToolCallFailed(String name, String error) { }
+            @Override public void onContextTruncated(int droppedCount, long estimatedTokens) {
+                events.add("truncated:" + droppedCount);
+            }
+        };
+
+        AgentLoop loop = new AgentLoop(
+                capturingClient, null, toolRegistry, objectMapper, "test", maxTokens);
+        loop.run("第一问", null);
+        loop.run("第二问", listener);
+
+        // 第二次发送时第一轮（user + 大回复）已被丢弃，只发送 system + 第二问
+        assertEquals(2, sentMessages.size());
+        List<ChatMessage> secondSend = sentMessages.get(1);
+        assertEquals(2, secondSend.size());
+        assertEquals("system", secondSend.get(0).getRole());
+        assertEquals("第二问", secondSend.get(1).getContent());
+        // 会话历史在截断后继续增长（追加本轮最终回复），listener 收到丢弃条数
+        assertEquals(3, loop.getConversationHistory().size());
+        assertEquals(List.of("truncated:2"), events);
+    }
+
+    @Test
+    void 便捷构造_无上限_不触发截断() {
+        String bigReply = "回".repeat(2000);
+        responses.add(new ChatResponse(null, List.of(
+                new ChatResponse.Choice(0, ChatMessage.assistant(bigReply), "stop")
+        ), null));
+        responses.add(new ChatResponse(null, List.of(
+                new ChatResponse.Choice(0, ChatMessage.assistant("第二答"), "stop")
+        ), null));
+
+        List<List<ChatMessage>> sentMessages = new ArrayList<>();
+        chatClient = (messages, tools) -> {
+            sentMessages.add(new ArrayList<>(messages));
+            return responses.get(callCount++);
+        };
+
+        AgentLoop loop = new AgentLoop(chatClient, toolRegistry, objectMapper, "test");
+        loop.run("第一问", null);
+        loop.run("第二问", null);
+
+        // 便捷构造不设上限：第二次发送仍携带完整历史（system + 3 条）
+        assertEquals(4, sentMessages.get(1).size());
     }
 }

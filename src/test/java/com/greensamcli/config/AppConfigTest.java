@@ -80,4 +80,25 @@ class AppConfigTest {
         assertTrue(e.getMessage().contains("GREENSAM_AUTO_APPROVE"),
                 "报错信息应指明出错的配置项，实际: " + e.getMessage());
     }
+
+    @Test
+    void maxContextTokens_defaultsTo16384() throws IOException {
+        AppConfig config = configWithEnvFile("OPENAI_API_KEY=test-key\n");
+        assertEquals(16384, config.getMaxContextTokens());
+    }
+
+    @Test
+    void maxContextTokens_readsFromEnvFile() throws IOException {
+        AppConfig config = configWithEnvFile(
+                "OPENAI_API_KEY=test-key\nGREENSAM_MAX_CONTEXT_TOKENS=4096\n");
+        assertEquals(4096, config.getMaxContextTokens());
+    }
+
+    @Test
+    void maxContextTokens_nonInteger_failsFastWithConfigName() {
+        IllegalStateException e = assertThrows(IllegalStateException.class, () ->
+                configWithEnvFile("OPENAI_API_KEY=test-key\nGREENSAM_MAX_CONTEXT_TOKENS=abc\n"));
+        assertTrue(e.getMessage().contains("GREENSAM_MAX_CONTEXT_TOKENS"),
+                "报错信息应指明出错的配置项，实际: " + e.getMessage());
+    }
 }

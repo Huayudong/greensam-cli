@@ -189,6 +189,13 @@ public class Repl {
                 sessionCompletionTokens += usage.getCompletionTokens();
                 pendingRoundUsage = usage;
             }
+
+            @Override
+            public void onContextTruncated(int droppedCount, long estimatedTokens) {
+                // 上下文超限触发了截断：明确告知用户丢了多少最旧消息，不静默失忆
+                renderer.displaySystem("上下文超限，已丢弃最早 " + droppedCount
+                        + " 条消息（估算约 " + estimatedTokens + " tokens）");
+            }
         };
 
         // ---- 主循环 ----

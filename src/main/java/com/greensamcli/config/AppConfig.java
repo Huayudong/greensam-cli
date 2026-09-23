@@ -20,6 +20,7 @@ import java.util.Map;
  *   <tr><td>GREENSAM_STREAMING</td><td>否</td><td>true</td><td>是否启用流式输出</td></tr>
  *   <tr><td>GREENSAM_TIMEOUT_SECONDS</td><td>否</td><td>300</td><td>HTTP 读超时秒数（非流式模式下慢模型的完整生成可能远超 10 秒）</td></tr>
  *   <tr><td>GREENSAM_AUTO_APPROVE</td><td>否</td><td>false</td><td>true 时跳过写操作审批自动放行（也可用启动参数 --yolo）</td></tr>
+ *   <tr><td>GREENSAM_MAX_CONTEXT_TOKENS</td><td>否</td><td>16384</td><td>发送 LLM 前的上下文 token 上限，超限则丢弃最旧的完整对话轮（估算为字符近似，保守高估）</td></tr>
  * </table>
  */
 public class AppConfig {
@@ -28,6 +29,11 @@ public class AppConfig {
      * HTTP 读超时默认秒数。
      */
     private static final int DEFAULT_TIMEOUT_SECONDS = 300;
+    /**
+     * 上下文 token 上限默认值：以当前主流模型 32k+ 窗口为参照留一半余量，
+     * 截断错杀（丢旧消息轻微降智）比爆窗（请求直接失败）便宜
+     */
+    public static final int DEFAULT_MAX_CONTEXT_TOKENS = 16384;
 
     private final Map<String, String> fallbackEnv;
     @Getter
@@ -44,6 +50,8 @@ public class AppConfig {
     private final int timeoutSeconds;
     @Getter
     private final boolean autoApprove;
+    @Getter
+    private final int maxContextTokens;
 
     public AppConfig() {
         this(Path.of("").toAbsolutePath());
@@ -65,6 +73,7 @@ public class AppConfig {
         this.streaming = !"false".equalsIgnoreCase(resolveEnv("GREENSAM_STREAMING"));
         this.timeoutSeconds = getIntEnv("GREENSAM_TIMEOUT_SECONDS", DEFAULT_TIMEOUT_SECONDS);
         this.autoApprove = getBooleanEnv("GREENSAM_AUTO_APPROVE", false);
+        this.maxContextTokens = getIntEnv("GREENSAM_MAX_CONTEXT_TOKENS", DEFAULT_MAX_CONTEXT_TOKENS);
     }
 
     /**

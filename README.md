@@ -261,6 +261,7 @@ java -jar target/greensam-cli-0.0.1-SNAPSHOT.jar
 | `GREENSAM_SYSTEM_PROMPT`   | 否   | 内置提示词                  | 系统提示词                       |
 | `GREENSAM_STREAMING`       | 否   | `true`                      | 是否启用流式输出                 |
 | `GREENSAM_TIMEOUT_SECONDS` | 否   | `300`                       | HTTP 读超时秒数（非流式慢模型用）|
+| `GREENSAM_MAX_CONTEXT_TOKENS` | 否 | `16384`                  | 上下文 token 上限，超限丢弃最旧对话轮 |
 
 配置优先级：系统环境变量 > `.env` 文件 > 内置默认值。
 
@@ -315,7 +316,9 @@ mvn test
   但可被构造绕过，**不是访问控制**（逐命令的交互式审批是主要防线，--yolo 会关掉它）；
 - **非流式模式下中断有延迟**：流式模式（默认）下 Ctrl+C 立即生效；非流式模式的 HTTP 读取
   不可中断，Ctrl+C 要等本次 LLM 响应返回后才生效；
-- **对话历史无上限**：长会话会持续增长直至超出模型上下文窗口（上下文管理规划中）。
+- **上下文截断是止血不是压缩**：发送前按字符近似估算 token，超限则丢弃最旧的完整对话轮
+  （system 与最近一轮永远保留，终端会提示丢弃条数）；单轮内塞入超大内容仍可能超限失败，
+  也不做摘要压缩（/compact）。
 
 ---
 
@@ -347,6 +350,7 @@ src/main/java/com/greensamcli/
 │   ├── AgentCancelledException.java    # 用户中断回合异常
 │   ├── ToolCallListener.java           # 工具执行回调
 │   ├── ToolExecutionException.java     # 工具执行异常
+│   ├── ContextTruncator.java           # 上下文截断（按完整对话轮丢弃最旧历史）
 │   └── AgentLoop.java                  # 核心 Agent 循环
 ├── tools/
 │   ├── ReadFileTool.java               # 读取文件（截断超长文件）
@@ -367,7 +371,8 @@ src/main/java/com/greensamcli/
 │   └── DotenvLoader.java               # .env 文件加载
 └── utils/
     ├── ToolSchemaUtils.java            # record → JSON Schema 生成
-    └── LineDiffUtils.java              # 行级 diff（审批展示用）
+    ├── LineDiffUtils.java              # 行级 diff（审批展示用）
+    └── ContextTokenEstimator.java      # 上下文 token 字符近似估算
 ```
 
 添加新工具只需继承 `AbstractTool` 声明参数 record，然后在 `GreensamCli.main()` 中注册。
@@ -392,8 +397,8 @@ git pull                   # 默认从 gitee 拉（origin/master）
 
 完整的路线图、设计契约与决策记录见 [docs/business/roadmap.md](docs/business/roadmap.md)，重点方向：
 
-- **上下文管理**：token 估算 + 超限截断，防止长会话爆窗
 - **plan 模式**：先读后写，制定计划经用户确认再执行（审批层与 ask_user 已是基础设施）
+- **DAG 工具编排**：并行 tool_calls 按依赖关系调度执行
 - **MCP 支持**：通过 `McpToolAdapter` 接入任何 MCP 兼容的工具服务器
 
 欢迎提 issue 交流与指正。

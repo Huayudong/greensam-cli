@@ -135,11 +135,13 @@
 
 **交付结果**：`AgentLoop.cancel()`（置标志 + 打断回合线程，空闲时无操作）+ 三类取消安全点（发 LLM 前后、执行每个工具前）；流式读取挪到守护工作线程使取消即时生效（迟到增量按迭代独立标志丢弃）；`ExecuteCommandTool` 升级为进程树强杀（`ProcessHandle.descendants`）并区分「用户中断」与「超时」；Repl 经 JVM 级 `sun.misc.Signal("INT")` 接线（Windows jansi 终端不向 `Terminal.handle` 分派 CTRL_C_EVENT，实测踩坑）；未决 tool_call 补「用户已中断」占位结果保证对话结构合法；顺带铺设批次④扩展点 `ToolExecutionHook`（挂载于 `ToolRegistry.executeTool` 前后）。127 测试全绿（新增 12：取消 5 + 钩子 4 + 命令工具中断/tree-kill 3）。变更详情见 `docs/engineering/2026-08-31-interrupt-mechanism.md`。
 
-### 批次③ 上下文截断（量级：约 1 天，独立，可插队）
+### 批次③ 上下文截断（量级：约 1 天，独立，可插队）——**已完成（2026-09-18）**
 
 按 2.4 契约执行。
 
 **验收标准**：估算器与截断策略单测覆盖边界（恰好阈值、system 保护、空历史）；截断发生时用户可见提示。
+
+**交付结果**：`utils/ContextTokenEstimator` 字符近似估算（CJK 1 字 ≈ 1 token、ASCII 4 字符 ≈ 1 token、每条消息固定 8 token 结构开销，保守高估）；`agent/ContextTruncator` 按完整对话轮截断（按轮而非按条删除，保证不留孤儿 tool 消息 / 无结果的 assistant-with-tool_calls；system + 最后一轮永不删，只剩最后一轮仍超限时放行）；配置 `GREENSAM_MAX_CONTEXT_TOKENS` 默认 16384（AppConfig 三件套 fail-fast）；AgentLoop 两条发送路径（同步/流式）发送前安全点接入，截断原地替换活引用历史；`ToolCallListener` 新增 `onContextTruncated` default 回调（仿 onRoundUsage 先例），Repl 转 💡 系统消息提示丢弃条数。189 测试全绿（新增 27：估算器 9 + 截断器 10 + 配置 3 + 循环接线 2 + 基线回归）。变更详情见 `docs/engineering/2026-09-18-context-truncation.md`。
 
 ### 批次④ 审批层（量级：2~3 天，依赖批次②）——**已完成（2026-08-31）**
 
@@ -195,3 +197,4 @@
 | 2026-08-28 | 追加批次「终端过程可视化」完成：全事件 emoji 前缀（🥷🏻🤖💭🛠️✍🏻📖🗂️🔍⚙️✅📊❌💡）、reasoning/usage 解析、契约入 2.8 节 |
 | 2026-08-31 | 批次②「中断机制」完成：cancel API + 安全点 + 流式工作线程化 + 进程树强杀 + sun.misc 信号接线 + ToolExecutionHook 扩展点铺设（批次④直接可用） |
 | 2026-08-31 | 批次④「审批层」完成：ApprovalHook 三选审批 + 写文件 diff 展示 + ask_user 四选提问工具（2.5 契约扩展）+ Windows 黑名单补全 + --yolo 开关；核心四批次全部收官 |
+| 2026-09-18 | 批次③「上下文截断」完成：ContextTokenEstimator 字符近似估算 + ContextTruncator 按轮截断 + GREENSAM_MAX_CONTEXT_TOKENS 配置 + 同步/流式双路径发送前接入 + onContextTruncated 回调提示；规划批次全部收官 |
